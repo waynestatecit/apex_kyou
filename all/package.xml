@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>WSU_Kyou</members>
+        <members>WSU_KyouTest</members>
+        <members>WSU_Kyou_QueueEntry</members>
+        <members>WSU_Kyou_QueueEntryTest</members>
+        <members>WSU_Kyou_QueueEntryList</members>
+        <members>WSU_Kyou_QueueEntryListTest</members>
+        <members>WSU_Kyou_Batchable</members>
+        <members>WSU_Kyou_Batchable_Over_List</members>
+        <members>WSU_Kyou_Batchable_Over_Object_List</members>
+        <members>WSU_Kyou_Scheduled</members>
+        <members>WSU_Kyou_ListBatchable_Testing</members>
+        <members>WSU_Kyou_ObjectListBatchable_Testing</members>
+        <members>WSU_Kyou_Batchable_Testing</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>WSU_Kyou_QueueEntry__c</members>
+        <name>CustomObject</name>
+    </types>
+    <version>31.0</version>
+</Package>
