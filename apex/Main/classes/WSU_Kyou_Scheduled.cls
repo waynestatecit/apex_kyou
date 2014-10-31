@@ -5,6 +5,6 @@
 
 global class WSU_Kyou_Scheduled implements Schedulable {
     global void execute(SchedulableContext sc) {
-        WSU_Kyou.run();
+        ID schId = WSU_Kyou.scheduleSelf();
     }
 }

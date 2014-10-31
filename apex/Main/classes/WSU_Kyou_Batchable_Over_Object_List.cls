@@ -6,10 +6,12 @@
 public class WSU_Kyou_Batchable_Over_Object_List implements Database.Batchable<Object>, Database.Stateful, Database.AllowsCallouts {
     public Database.Batchable<Object> implementation = null;
     private Map<String, Object> args = null;
+    private Boolean perpetuateInFinish = false;
 
-    public WSU_Kyou_Batchable_Over_Object_List(Type implementation, Map<String, Object> args) {
+    public WSU_Kyou_Batchable_Over_Object_List(Type implementation, Map<String, Object> args, Boolean perpetuateInFinish) {
         this.args = args;
         setImplementation(implementation);
+        this.perpetuateInFinish = perpetuateInFinish;
     }
 
     public void setImplementation(Type implementation) {
@@ -34,6 +36,9 @@ public class WSU_Kyou_Batchable_Over_Object_List implements Database.Batchable<O
 
     public void finish(Database.BatchableContext bc) {
         implementation.finish(bc);
+        if (perpetuateInFinish) {
+            WSU_Kyou.scheduleSelf();
+        }
     }
 
     public class Kyou_BatchableException extends Exception {}

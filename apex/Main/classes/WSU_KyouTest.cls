@@ -84,7 +84,7 @@ public class WSU_KyouTest {
     static testMethod void testNonBatchable() {
         Boolean success = true;
         try {
-            ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou.class);
+            ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou_QueueEntry.class);
         } catch (WSU_Kyou.KyouException e) {
             success = false;
             System.assertEquals(e.getMessage(), 'The submitted Class does not implement Database.Batchable<>');
@@ -200,6 +200,8 @@ public class WSU_KyouTest {
         System.assertEquals(WSU_Kyou.entries().size(), 1);
     }
 
+    /* This test won't run now - the loop to fill up the batch apex slots fails because of the restriction of only one
+       Database.executeBatch() call per test method
     @isTest(SeeAllData = true)
     static void testEnqueueFullQueue() {
         //System.assertEquals(WSU_Kyou.entries().size(), 0);
@@ -293,6 +295,189 @@ public class WSU_KyouTest {
         Set<ID> batchJobIds = WSU_Kyou.run();
         Integer afterRun = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
         System.assertEquals(before + 1, afterRun);
+    }
+
+    static testMethod void testPerpetuateInRun() {
+        WSU_Kyou.setOptions(true, false, false);
+
+        Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou_Batchable_Testing.class);
+        Integer after = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+
+        System.assertEquals(before, after);
+
+        String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
+        List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
+        System.assertEquals(scheduledBefore.size(), 0);
+
+        Test.startTest();
+        // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
+        Set<ID> batchJobIds = WSU_Kyou.run();
+
+        List<AsyncApexJob> afterRun = [select ApexClass.Name, Status from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+
+        System.assertEquals(before + 1, afterRun.size());
+        System.assertEquals(afterRun.get(0).ApexClass.Name, 'WSU_Kyou_Batchable');
+        System.assertEquals(afterRun.get(0).Status, 'Queued');
+
+        List<CronTrigger> scheduledAfter = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfter.size(), 1);
+        System.assertEquals(scheduledAfter.get(0).CronJobDetail.Name, 'WSU_Kyou');
+        System.assertEquals(scheduledAfter.get(0).State, 'WAITING');
+
+        // Now WSU_Kyou_Batchable_Testing will complete, making all of the LastNames == 'DEFAULT'.
+        Test.stopTest();
+
+        System.assertEquals([select count() from Contact where LastName = 'DEFAULT'], 2);
+        System.assertEquals([select count() from Contact where LastName != 'DEFAULT'], 0);
+
+    }
+
+    static testMethod void testPerpetuateInFinish() {
+        WSU_Kyou.setOptions(false, true, false);
+
+        Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou_Batchable_Testing.class);
+        Integer after = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+
+        System.assertEquals(before, after);
+
+        String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
+        List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
+        System.assertEquals(scheduledBefore.size(), 0);
+
+        Test.startTest();
+        // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
+        Set<ID> batchJobIds = WSU_Kyou.run();
+
+        List<AsyncApexJob> afterRun = [select ApexClass.Name, Status from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        System.assertEquals(before + 1, afterRun.size());
+        System.assertEquals(afterRun.get(0).ApexClass.Name, 'WSU_Kyou_Batchable');
+        System.assertEquals(afterRun.get(0).Status, 'Queued');
+
+        // No perpetuation yet
+        List<CronTrigger> scheduledAfter = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfter.size(), 0);
+
+        // Now WSU_Kyou_Batchable_Testing will complete, making all of the LastNames == 'DEFAULT'.
+        // The scheduleBatch() inside finish() will also run now
+        Test.stopTest();
+
+        List<CronTrigger> scheduledAfterStop = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfterStop.size(), 1);
+        System.assertEquals(scheduledAfterStop.get(0).CronJobDetail.Name, 'WSU_Kyou');
+        System.assertEquals(scheduledAfterStop.get(0).State, 'WAITING');
+
+        System.assertEquals([select count() from Contact where LastName = 'DEFAULT'], 2);
+        System.assertEquals([select count() from Contact where LastName != 'DEFAULT'], 0);
+
+    }
+
+    static testMethod void testDrasticMeasuresNotFull() {
+        WSU_Kyou.setOptions(false, true, true);
+
+        Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou_Batchable_Testing.class);
+        Integer after = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+
+        System.assertEquals(before, after);
+
+        String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
+        List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
+        System.assertEquals(scheduledBefore.size(), 0);
+
+        Test.startTest();
+        // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
+        Set<ID> batchJobIds = WSU_Kyou.run();
+
+        List<AsyncApexJob> afterRun = [select ApexClass.Name, Status from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        System.assertEquals(before + 1, afterRun.size());
+        System.assertEquals(afterRun.get(0).ApexClass.Name, 'WSU_Kyou_Batchable');
+        System.assertEquals(afterRun.get(0).Status, 'Queued');
+
+        // No perpetuation yet
+        List<CronTrigger> scheduledAfter = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfter.size(), 0);
+
+        // Now WSU_Kyou_Batchable_Testing will complete, making all of the LastNames == 'DEFAULT'.
+        // The scheduleBatch() inside finish() will also run now
+        Test.stopTest();
+
+        List<CronTrigger> scheduledAfterStop = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfterStop.size(), 1);
+        System.assertEquals(scheduledAfterStop.get(0).CronJobDetail.Name, 'WSU_Kyou');
+        System.assertEquals(scheduledAfterStop.get(0).State, 'WAITING');
+
+        System.assertEquals([select count() from Contact where LastName = 'DEFAULT'], 2);
+        System.assertEquals([select count() from Contact where LastName != 'DEFAULT'], 0);
+
+    }
+
+    static testMethod void testDrasticMeasuresFull() {
+        WSU_Kyou.setOptions(false, true, true, true);
+
+        Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou_Batchable_Testing.class);
+        Integer after = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+
+        System.assertEquals(before, after);
+
+        String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
+        List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
+        System.assertEquals(scheduledBefore.size(), 0);
+
+        Test.startTest();
+        // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
+        Set<ID> batchJobIds = WSU_Kyou.run();
+
+        List<AsyncApexJob> afterRun = [select ApexClass.Name, Status from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        System.assertEquals(before + 1, afterRun.size());
+        System.assertEquals(afterRun.get(0).ApexClass.Name, 'WSU_Kyou_Batchable');
+        System.assertEquals(afterRun.get(0).Status, 'Queued');
+
+        // No perpetuation yet
+        List<CronTrigger> scheduledAfter = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfter.size(), 0);
+
+        // Now WSU_Kyou_Batchable_Testing will complete, making all of the LastNames == 'DEFAULT'.
+        // drasticMeasures is forced so WSU_Kyou will run again here.
+        Test.stopTest();
+
+        List<CronTrigger> scheduledAfterStop = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfterStop.size(), 0);
+
+        List<AsyncApexJob> afterRunStop = [select ApexClass.Name, Status from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        System.assertEquals(afterRunStop.size(), 0); // No runs are pending
+
+        List<AsyncApexJob> afterRunStopKyou = [select ApexClass.Name, Status from AsyncApexJob where Status = 'Completed' and ApexClass.Name = 'WSU_Kyou' and JobType = 'BatchApex'];
+        System.assertEquals(afterRunStopKyou.size(), 1); // The one that ran at stopTest()
+
+        List<AsyncApexJob> afterRunStopTestingClass = [select ApexClass.Name, Status from AsyncApexJob where Status = 'Completed' and ApexClass.Name = 'WSU_Kyou_Batchable' and JobType = 'BatchApex'];
+        System.assertEquals(afterRunStopTestingClass.size(), 1); // The original batchable testing clas
+
+        System.assertEquals([select count() from Contact where LastName = 'DEFAULT'], 2);
+        System.assertEquals([select count() from Contact where LastName != 'DEFAULT'], 0);
+
+    }
+
+    static testMethod void testScheduled() {
+        String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
+        List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
+        System.assertEquals(scheduledBefore.size(), 0);
+
+        Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+
+        WSU_Kyou_Scheduled sch = new WSU_Kyou_Scheduled();
+        SchedulableContext context = null;
+        sch.execute(context);
+
+        Integer after = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        System.assertEquals(before, after);
+
+        List<CronTrigger> scheduledAfterStop = Database.query(scheduledQuery);
+        System.assertEquals(scheduledAfterStop.size(), 1);
+        System.assertEquals(scheduledAfterStop.get(0).CronJobDetail.Name, 'WSU_Kyou');
+        System.assertEquals(scheduledAfterStop.get(0).State, 'WAITING');
     }
 
 }
