@@ -25,23 +25,49 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     private static Boolean perpetuateInFinish = false;
     private static Boolean drasticMeasures = false;
     private static Boolean forceDrasticMeasures = false;
+    private static Integer waitMinutes = 5; // The default is to schedule the batch in 5 minutes
 
     public WSU_Kyou() {
+    }
+
+    public WSU_Kyou(Integer waitMinutesArg) {
+        setOptions(waitMinutesArg);
     }
 
     public WSU_Kyou(Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg) {
         setOptions(perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg);
     }
 
+    public WSU_Kyou(Integer waitMinutesArg, Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg) {
+        setOptions(waitMinutesArg, perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg);
+    }
+
     public WSU_Kyou(Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg, Boolean forceDrasticMeasuresArg) {
         setOptions(perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg, forceDrasticMeasuresArg);
     }
 
+    public WSU_Kyou(Integer waitMinutesArg, Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg, Boolean forceDrasticMeasuresArg) {
+        setOptions(waitMinutesArg, perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg, forceDrasticMeasuresArg);
+    }
+
+    public static void setOptions(Integer waitMinutesArg) {
+        setOptions(waitMinutesArg, perpetuateInRun, perpetuateInFinish, drasticMeasures, forceDrasticMeasures);
+    }
+
     public static void setOptions(Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg) {
-        setOptions(perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg, false);
+        setOptions(waitMinutes, perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg, forceDrasticMeasures);
+    }
+
+    public static void setOptions(Integer waitMinutesArg, Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg) {
+        setOptions(waitMinutesArg, perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg, forceDrasticMeasures);
     }
 
     public static void setOptions(Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg, Boolean forceDrasticMeasuresArg) {
+        setOptions(waitMinutes, perpetuateInRunArg, perpetuateInFinishArg, drasticMeasuresArg, forceDrasticMeasuresArg);
+    }
+
+    public static void setOptions(Integer waitMinutesArg, Boolean perpetuateInRunArg, Boolean perpetuateInFinishArg, Boolean drasticMeasuresArg, Boolean forceDrasticMeasuresArg) {
+        waitMinutes = waitMinutesArg;
         perpetuateInRun = perpetuateInRunArg;
         perpetuateInFinish = perpetuateInFinishArg;
         drasticMeasures = drasticMeasuresArg;
@@ -104,7 +130,7 @@ public class WSU_Kyou implements Database.Batchable<Object> {
             if (drasticMeasures) {
                 // respawn myself as a batch job
                 if (slotsAvailable() > 0) {
-                    toReturn = Database.executeBatch(new WSU_Kyou(perpetuateInRun, perpetuateInFinish, drasticMeasures));
+                    toReturn = Database.executeBatch(new WSU_Kyou(waitMinutes, perpetuateInRun, perpetuateInFinish, drasticMeasures));
                 }
             } else {
                 // just die
@@ -129,12 +155,21 @@ public class WSU_Kyou implements Database.Batchable<Object> {
 
         ID returnId = null;
         if (numScheduled == 0) {
-            Integer waitMinutes = 5;
             try {
+                // The constructor args inside ScheduleBatch() seem to get lost when the batch finally runs
+                // So save them here and recall them in WSU_Kyou.start()
+                List<Database.DeleteResult> deleteResults = Database.Delete(WSU_Kyou_Options__c.getAll().values());
+                Database.SaveResult result = Database.Insert(new WSU_Kyou_Options__c(
+                    Name = 'options',
+                    Wait_Minutes__c = waitMinutes,
+                    Perpetuate_In_Run__c = perpetuateInRun,
+                    Perpetuate_In_Finish__c = perpetuateInFinish,
+                    Drastic_Measures__c = drasticMeasures
+                ));
                 if (forceDrasticMeasures) {
                     throw new KyouException('You have exceeded the maximum number of Apex scheduled jobs.');
                 }
-                returnId = System.ScheduleBatch(new WSU_Kyou(), 'WSU_Kyou', waitMinutes);
+                returnId = System.ScheduleBatch(new WSU_Kyou(waitMinutes, perpetuateInRun, perpetuateInFinish, drasticMeasures), 'WSU_Kyou', waitMinutes);
             } catch (System.AsyncException e) {
                 returnId = errorHandler(e);
             } catch (KyouException e) {
@@ -243,6 +278,9 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     }
 
     public void finish(Database.BatchableContext bc) {
+        WSU_Kyou_Options__c options = WSU_Kyou_Options__c.getInstance('options');
+        setOptions(options.Wait_Minutes__c.intValue(), options.Perpetuate_In_Run__c, options.Perpetuate_In_Finish__c, options.Drastic_Measures__c);
+        Database.DeleteResult result = Database.Delete(options);
         Set<ID> ignore = run();
     }
 

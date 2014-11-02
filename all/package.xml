@@ -18,6 +18,7 @@
     </types>
     <types>
         <members>WSU_Kyou_QueueEntry__c</members>
+        <members>WSU_Kyou_Options__c</members>
         <name>CustomObject</name>
     </types>
     <version>31.0</version>

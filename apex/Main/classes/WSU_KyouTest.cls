@@ -16,7 +16,7 @@ public class WSU_KyouTest {
         });
     }
 
-    static testMethod void testOne() {
+    static testMethod void testEnqueueBatch() {
         Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
         ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou_Batchable_Testing.class);
         Integer after = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
@@ -306,9 +306,14 @@ public class WSU_KyouTest {
 
         System.assertEquals(before, after);
 
-        String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
+        // Ordering lets us grab the one we made later... I guess I could arrange for the ID to come back or to filter
+        // them out but this works for now.
+        String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\') order by CreatedDate desc';
+        // This result doesn't actually matter, because it will go away 
         List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
-        System.assertEquals(scheduledBefore.size(), 0);
+        if (scheduledBefore.size() > 0) {
+            throw new WSU_Kyou.KyouException('Please delete all WSU_Kyou_Scheduled Scheduled Apex jobs before running tests.');
+        }
 
         Test.startTest();
         // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
@@ -344,7 +349,9 @@ public class WSU_KyouTest {
 
         String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
         List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
-        System.assertEquals(scheduledBefore.size(), 0);
+        if (scheduledBefore.size() > 0) {
+            throw new WSU_Kyou.KyouException('Please delete all WSU_Kyou_Scheduled Scheduled Apex jobs before running tests.');
+        }
 
         Test.startTest();
         // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
@@ -384,7 +391,9 @@ public class WSU_KyouTest {
 
         String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
         List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
-        System.assertEquals(scheduledBefore.size(), 0);
+        if (scheduledBefore.size() > 0) {
+            throw new WSU_Kyou.KyouException('Please delete all WSU_Kyou_Scheduled Scheduled Apex jobs before running tests.');
+        }
 
         Test.startTest();
         // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
@@ -424,7 +433,9 @@ public class WSU_KyouTest {
 
         String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
         List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
-        System.assertEquals(scheduledBefore.size(), 0);
+        if (scheduledBefore.size() > 0) {
+            throw new WSU_Kyou.KyouException('Please delete all WSU_Kyou_Scheduled Scheduled Apex jobs before running tests.');
+        }
 
         Test.startTest();
         // This will start WSU_Kyou_Batchable_Testing, but it won't complete until stopTest() below
@@ -463,7 +474,9 @@ public class WSU_KyouTest {
     static testMethod void testScheduled() {
         String scheduledQuery = 'select CronJobDetail.Name, State from CronTrigger where CronJobDetail.Name = \'WSU_Kyou\' and State not in (\'Aborted\', \'Completed\', \'Failed\')';
         List<CronTrigger> scheduledBefore = Database.query(scheduledQuery);
-        System.assertEquals(scheduledBefore.size(), 0);
+        if (scheduledBefore.size() > 0) {
+            throw new WSU_Kyou.KyouException('Please delete all WSU_Kyou_Scheduled Scheduled Apex jobs before running tests.');
+        }
 
         Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
 
