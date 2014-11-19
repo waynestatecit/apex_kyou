@@ -11,7 +11,7 @@
 // Capabilities:
 //    fully manage queued stuff (CRUD)
 //    logs (another package?)
-//    
+//
 
 public class WSU_Kyou implements Database.Batchable<Object> {
     public static Database.Batchable<sObject> latestImplementation = null;
@@ -19,7 +19,7 @@ public class WSU_Kyou implements Database.Batchable<Object> {
 
     private static Integer maxBatchables = 5;
 
-    private static WSU_Kyou_QueueEntryList entries = null;
+    private static WSU_Kyou_QueueEntryList entries = new WSU_Kyou_QueueEntryList();
 
     private static Boolean perpetuateInRun = false;
     private static Boolean perpetuateInFinish = false;
@@ -74,17 +74,9 @@ public class WSU_Kyou implements Database.Batchable<Object> {
         forceDrasticMeasures = forceDrasticMeasuresArg;
     }
 
-    static {
-        refreshEntries();
-    }
-
     public static void refreshEntries() {
-        //Integer numberWithSetNext = [select count() from WSU_Kyou_QueueEntry__c where Next__c != null];
-        //Boolean nextsSet = [select count() from WSU_Kyou_QueueEntry__c where Next__c != null] > 0;
-        entries = new WSU_Kyou_QueueEntryList(WSU_Soop.query(
-            //'select Id, Data__c, Next__c from WSU_Kyou_QueueEntry__c ' + (nextsSet ? 'where Next__c != null' : 'where Next__c = null'),
-            //'select Id, Data__c, Next__c from WSU_Kyou_QueueEntry__c where Top__c = true',
-            'select Id, Data__c, Next__c from WSU_Kyou_QueueEntry__c limit 5',
+        entries = new WSU_Kyou_QueueEntryList(WSU_Soop.queryMap(
+            'select Id, Data__c, Next__c from WSU_Kyou_QueueEntry__c',
             WSU_Kyou_QueueEntry.class
         ));
     }
@@ -104,6 +96,13 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     @TestVisible
     private static Set<ID> run() {
         Set<ID> toReturn = new Set<ID>();
+
+        if (entries == null) {
+            entries = new WSU_Kyou_QueueEntryList(WSU_Soop.queryMap(
+                'select Id, Data__c, Next__c from WSU_Kyou_QueueEntry__c',
+                WSU_Kyou_QueueEntry.class
+            ));
+        }
 
         while (slotsAvailable() > 0 && entries.size() > 0) {
             List<Object> entryInfo = entries.popFirst();
@@ -229,6 +228,8 @@ public class WSU_Kyou implements Database.Batchable<Object> {
                 return executeBatch(batchable, args, batchSize, startReturnsList, startReturnsObjectList);
             }
         }
+
+        refreshEntries();
 
         WSU_Kyou_QueueEntry newEntry = new WSU_Kyou_QueueEntry();
         newEntry.generateQueueEntry(batchable, batchSize, args, next, startReturnsList, startReturnsObjectList);
