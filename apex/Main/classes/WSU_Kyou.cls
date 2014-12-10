@@ -19,7 +19,8 @@ public class WSU_Kyou implements Database.Batchable<Object> {
 
     private static Integer maxBatchables = 5;
 
-    private static WSU_Kyou_QueueEntryList entries = new WSU_Kyou_QueueEntryList();
+    @TestVisible
+    private static List<Map<String, Object>> entriesReadyToCommit = new List<Map<String, Object>>();
 
     private static Boolean perpetuateInRun = false;
     private static Boolean perpetuateInFinish = false;
@@ -74,20 +75,59 @@ public class WSU_Kyou implements Database.Batchable<Object> {
         forceDrasticMeasures = forceDrasticMeasuresArg;
     }
 
-    public static void refreshEntries() {
-        entries = new WSU_Kyou_QueueEntryList(WSU_Soop.queryMap(
-            'select Id, Data__c, Next__c from WSU_Kyou_QueueEntry__c',
-            WSU_Kyou_QueueEntry.class
-        ));
-    }
-
-    public static WSU_Kyou_QueueEntryList entries() {
-        return entries;
-    }
-
     public static Integer slotsAvailable() {
         Integer toReturn = maxBatchables - [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
         return toReturn;
+    }
+
+    public static List<Object> getOpenSlots() {
+        Set<Integer> openSlots = new Set<Integer>();
+        List<WSU_Kyou_Open_Slots__c> openSlotsRecords = [select Data__c from WSU_Kyou_Open_Slots__c];
+        for (WSU_Kyou_Open_Slots__c openSlotsRecord : openSlotsRecords) {
+            for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(openSlotsRecord.Data__c)) {
+                openSlots.add((Integer)openSlotObj);
+            }
+        }
+        return new List<Object>{(Object)openSlots, (Object)openSlotsRecords};
+    }
+
+    public static void setOpenSlots(Set<Integer> openSlots, List<WSU_Kyou_Open_Slots__c> openSlotsRecords) {
+        List<Database.DeleteResult> delResults = Database.Delete(openSlotsRecords);
+        List<WSU_Kyou_Open_Slots__c> toInsert = new List<WSU_Kyou_Open_Slots__c>();
+        Integer dataFieldLength = Schema.sObjectType.WSU_Kyou_Open_Slots__c.fields.Data__c.getLength();
+        List<Object> dataList = null;
+        Integer dataStringLengthCount = 0;
+        for (Integer openSlot : openSlots) {
+            String openSlotString = String.valueOf(openSlot);
+            if (
+                toInsert.size() == 0 ||
+                // The + 1 is for the JSON comma
+                dataStringLengthCount + openSlotString.length() + 1 > dataFieldLength
+            ) {
+                // Close out old one if it's there
+                if (toInsert.size() > 0) {
+                    toInsert.get(toInsert.size() - 1).Data__c = JSON.serialize(dataList);
+                }
+
+                // Prepare new one
+                dataList = new List<Object>();
+                toInsert.add(new WSU_Kyou_Open_Slots__c(
+                    Data__c = '' // To protect the String.length() call in the above conditional
+                ));
+                // Note that I'm using this method because I suspect that string concatenation is slow.  I haven't
+                // tested it, though.
+                dataStringLengthCount = 2; // The square brackets
+            }
+
+            dataList.add(openSlot);
+            dataStringLengthCount += openSlotString.length() + 1; // + 1 for the comma - yes I'm counting one
+                                                                  // more comma than I should.
+        }
+        // Close out last one
+        if (toInsert.size() > 0) {
+            toInsert.get(toInsert.size() - 1).Data__c = JSON.serialize(dataList);
+        }
+        List<Database.SaveResult> insertResults = Database.Insert(toInsert);
     }
 
     // run() shouldn't be run directly.  It only gets run via the WSU_Kyou.finish() method.  All other ways to invoke
@@ -97,19 +137,95 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     private static Set<ID> run() {
         Set<ID> toReturn = new Set<ID>();
 
-        if (entries == null) {
-            entries = new WSU_Kyou_QueueEntryList(WSU_Soop.queryMap(
-                'select Id, Data__c, Next__c from WSU_Kyou_QueueEntry__c',
-                WSU_Kyou_QueueEntry.class
-            ));
+        // Get Info and Open Slots records to determine what to query
+        List<WSU_Kyou_Info__c> kyouInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assert(kyouInfos.size() <= 1); // FIXME: Sanity check for now
+
+        WSU_Kyou_Info__c kyouInfo = null;
+        if (kyouInfos.size() == 1) {
+            kyouInfo = kyouInfos.get(0);
+        } else { // empty Kyou
+            kyouInfo = new WSU_Kyou_Info__c(
+                Name = 'KyouInfo',
+                Highest_Priority__c = null,
+                Lowest_Priority__c = null,
+                Locked__c = false
+            );
         }
 
-        while (slotsAvailable() > 0 && entries.size() > 0) {
-            List<Object> entryInfo = entries.popFirst();
-            toReturn.add(executeBatch((Type)entryInfo.get(0), (Map<String, Object>)entryInfo.get(2), (Integer)entryInfo.get(1), (Boolean)entryInfo.get(3), (Boolean)entryInfo.get(4)));
-            if (Test.isRunningTest()) {
-                break;
+        // If it's locked, just skip and let it perpetuate
+        if (!kyouInfo.Locked__c) {
+            // Lock it
+            kyouInfo.Locked__c = true;
+            Database.UpsertResult upsResult = Database.Upsert(kyouInfo);
+
+            List<Object> openSlotsResults = getOpenSlots();
+            Set<Integer> openSlots = (Set<Integer>)openSlotsResults.get(0);
+            List<WSU_Kyou_Open_Slots__c> openSlotsRecords = (List<WSU_Kyou_Open_Slots__c>)openSlotsResults.get(1);
+
+            List<Integer> foundEntries = new List<Integer>();
+            if (kyouInfo.Highest_Priority__c != null) {
+                // Use openSlots to decide which priorities you want to grab
+                Integer i = kyouInfo.Highest_Priority__c.intValue() + 1;
+                foundEntries.add(kyouInfo.Highest_Priority__c.intValue());
+                while (foundEntries.size() < maxBatchables + 1 && i <= kyouInfo.Lowest_Priority__c.intValue()) {
+                    // We know the max we can run is maxBatchables, so grab maxBatchables + 1 now and check slotsAvailable() later
+                    // We grab maxBatchables + 1 so if we use all maxBatchables, we can set the new Highest_Priority__c to the sixth
+                    if (!openSlots.contains(i)) {
+                        foundEntries.add(i);
+                    }
+                    i++;
+                }
+            } // else this is a locked, empty Kyou
+            // foundEntries is now ordered from highest to lowest priority
+
+            List<WSU_Kyou_QueueEntry__c> entries = [select Id, Data__c, Priority__c from WSU_Kyou_QueueEntry__c where Priority__c in :foundEntries order by Priority__c];
+
+            while (slotsAvailable() > 0 && entries.size() > 0) {
+                WSU_Kyou_QueueEntry__c entry = entries.remove(0);
+                Map<String, Object> entryData = (Map<String, Object>)JSON.deserializeUntyped(entry.Data__c);
+                toReturn.add(executeBatch(
+                    Type.forName((String)entryData.get('class')),
+                    (Map<String, Object>)entryData.get('args'),
+                    (Integer)entryData.get('size'),
+                    (Boolean)entryData.get('list'),
+                    (Boolean)entryData.get('object_list')
+                ));
+                // edit kyouinfo
+                if (entries.size() > 0) {
+                    kyouInfo.Highest_Priority__c = entries.get(0).Priority__c;
+                } else {
+                    // if makes queue empty, null out kyouinfo priority fields
+                    kyouInfo.Highest_Priority__c = null;
+                    kyouInfo.Lowest_Priority__c = null;
+                }
+                if (Test.isRunningTest()) { // test context only allows one Database.executeBatch() call
+                    break;
+                }
             }
+
+            // Save new open slots
+            if (kyouInfo.Highest_Priority__c == null) {
+                openSlots.clear();
+            } else {
+                List<Integer> openSlotsList = new List<Integer>(openSlots);
+                openSlotsList.sort();
+                for (Integer openSlot : openSlotsList) {
+                    if (openSlot <= kyouInfo.Highest_Priority__c) {
+                        openSlots.remove(openSlot);
+                    } else {
+                        break;
+                    }
+                }
+            }
+            setOpenSlots(openSlots, openSlotsRecords);
+
+            // Unlock it and save kyouInfo
+            kyouInfo.Locked__c = false;
+            Database.SaveResult result = Database.Update(kyouInfo);
+
+        } else { // Send back the kyouInfo ID in case a caller wants to check - but this isn't happening right now
+            toReturn.add(kyouInfo.Id);
         }
 
         if (perpetuateInRun) {
@@ -179,45 +295,17 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     }
 
     public static ID enqueueBatch(Type batchable) {
-        return enqueueBatch(batchable, null, (ID)null);
+        return enqueueBatch(batchable, null, null, (Integer)null, false, true, false, false);
     }
 
-    public static ID enqueueBatch(Type batchable, Boolean tryNow) {
-        return enqueueBatch(batchable, null, null, null, tryNow);
-    }
+    // There used do be some more overloaded enqueueBatch() calls here, but it's not entirely clear they're that useful for callers.
 
-    public static ID enqueueBatch(Type batchable, Integer batchSize) {
-        return enqueueBatch(batchable, batchSize, (ID)null);
-    }
+    public static ID enqueueBatch(Type batchable, Integer batchSize, Map<String, Object> args, Integer priority, Boolean tryNow, Boolean commitNow, Boolean startReturnsList, Boolean startReturnsObjectList) {
 
-    public static ID enqueueBatch(Type batchable, Integer batchSize, Boolean tryNow) {
-        return enqueueBatch(batchable, batchSize, null, null, tryNow);
-    }
-
-    public static ID enqueueBatch(Type batchable, Integer batchSize, ID next) {
-        return enqueueBatch(batchable, batchSize, null, next, false);
-    }
-
-    public static ID enqueueBatch(Type batchable, Integer batchSize, ID next, Boolean tryNow) {
-        return enqueueBatch(batchable, batchSize, null, next, tryNow);
-    }
-
-    public static ID enqueueBatch(Type batchable, Integer batchSize, Map<String, Object> args, ID next, Boolean tryNow) {
-        return enqueueBatch(batchable, batchSize, args, next, tryNow, false);
-    }
-
-    public static ID enqueueBatch(Type batchable, Integer batchSize, Map<String, Object> args, ID next, Boolean tryNow, Boolean doDML) {
-        return enqueueBatch(batchable, batchSize, args, next, tryNow, doDML, false);
-    }
-
-    public static ID enqueueBatch(Type batchable, Integer batchSize, Map<String, Object> args, ID next, Boolean tryNow, Boolean doDML, Boolean startReturnsList) {
         // In case you wonder why I need a flag to say whether a return List is over Object or sObject, try instantiating a class
         // that implements Database.Batchable<Object> then do a bunch of instanceof Database.Batchable<anything>.
         // Always comes back true!
-        return enqueueBatch(batchable, batchSize, args, next, tryNow, doDML, startReturnsList, false);
-    }
 
-    public static ID enqueueBatch(Type batchable, Integer batchSize, Map<String, Object> args, ID next, Boolean tryNow, Boolean doDML, Boolean startReturnsList, Boolean startReturnsObjectList) {
         Object job = batchable.newInstance();
         if (!(job instanceof Database.Batchable<Object>)) {
             throw new KyouException('The submitted Class does not implement Database.Batchable<>');
@@ -229,20 +317,47 @@ public class WSU_Kyou implements Database.Batchable<Object> {
             }
         }
 
-        refreshEntries();
-
-        WSU_Kyou_QueueEntry newEntry = new WSU_Kyou_QueueEntry();
-        newEntry.generateQueueEntry(batchable, batchSize, args, next, startReturnsList, startReturnsObjectList);
-        if (doDML) {
-            Database.SaveResult result = Database.insert(newEntry.sobj);
+        Map<String, Object> entry = new Map<String, Object>{
+            'class' => batchable.getName(),
+            'args' => args,
+            'size' => batchSize,
+            'priority' => priority,
+            'list' => startReturnsList,
+            'object_list' => startReturnsObjectList
+        };
+        if (commitNow) {
+            return doCommit(new List<Map<String, Object>>{
+                entry
+            });
+        } else {
+            entriesReadyToCommit.add(entry);
         }
-        entries.add(newEntry, doDML);
-
         return null;
     }
 
-    public static void doCommit() {
-        entries.doCommit();
+    public static ID doCommit() {
+        ID toReturn = doCommit(entriesReadyToCommit);
+        entriesReadyToCommit.clear();
+        return toReturn;
+    }
+    public static ID doCommit(List<Map<String, Object>> entries) {
+        ID toReturn = null;
+        if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) { // We're not at the limit
+            if (entries.size() > 0) {
+                // This condition is because of the bug here:
+                // https://success.salesforce.com/issues_view?id=a1p300000008XM1AAM
+                // If this bug gets fixed, remove this condition.
+                if (!Test.isRunningTest()) {
+                    toReturn = System.enqueueJob(new WSU_Kyou_Add(entries));
+                }
+            }
+        } else {
+            // FIXME: add a flag for running the add code anyway in this invocation space if we're at the Queueable
+            // limit
+            throw new KyouException('The org Queueable Job limit of ' + Limits.getLimitQueueableJobs() + ' has been reached.  Try again later.');
+        }
+
+        return toReturn;
     }
 
     private static ID executeBatch(Type batchableType, Map<String, Object> args, Integer batchSize, Boolean startReturnsList, Boolean startReturnsObjectList) {
@@ -279,10 +394,25 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     }
 
     public void finish(Database.BatchableContext bc) {
-        WSU_Kyou_Options__c options = WSU_Kyou_Options__c.getInstance('options');
-        setOptions(options.Wait_Minutes__c.intValue(), options.Perpetuate_In_Run__c, options.Perpetuate_In_Finish__c, options.Drastic_Measures__c);
-        Database.DeleteResult result = Database.Delete(options);
-        Set<ID> ignore = run();
+        // Check Saved Adds for something that needs to be added before running.  If found, just submit the queueable
+        // and skip the run().
+        List<WSU_Kyou_Saved_Add__c> savedAdds = [select Data__c from WSU_Kyou_Saved_Add__c];
+        if (savedAdds.size() > 0) {
+            List<Map<String, Object>> entries = new List<Map<String, Object>>();
+            for (WSU_Kyou_Saved_Add__c savedAdd : savedAdds) {
+                for (Object entryObj : (List<Object>)JSON.deserializeUntyped(savedAdd.Data__c)) {
+                    entries.add((Map<String, Object>)entryObj);
+                }
+            }
+            ID ignore = System.enqueueJob(new WSU_Kyou_Add(entries));
+            List<Database.DeleteResult> delResults = Database.Delete(savedAdds);
+        } else {
+            WSU_Kyou_Options__c options = WSU_Kyou_Options__c.getInstance('options');
+            setOptions(options.Wait_Minutes__c.intValue(), options.Perpetuate_In_Run__c, options.Perpetuate_In_Finish__c, options.Drastic_Measures__c);
+            Database.DeleteResult result = Database.Delete(options);
+            Set<ID> ignore = run();
+        }
+
     }
 
     public class KyouException extends Exception {}
