@@ -25,15 +25,15 @@ License: 3-clause BSD license.  See LICENSE.
         <visibleLines>2</visibleLines>
     </fields>
     <fields>
-        <fullName>Next__c</fullName>
-        <deleteConstraint>SetNull</deleteConstraint>
+        <fullName>Priority__c</fullName>
         <externalId>false</externalId>
-        <label>Next</label>
-        <required>false</required>
-        <referenceTo>WSU_Kyou_QueueEntry__c</referenceTo>
-        <relationshipName>Previous</relationshipName>
+        <unique>true</unique>
+        <label>Priority</label>
+        <required>true</required>
         <trackHistory>false</trackHistory>
-        <type>Lookup</type>
+        <type>Number</type>
+        <precision>18</precision>
+        <scale>0</scale>
     </fields>
     <pluralLabel>Queue Entries</pluralLabel>
     <sharingModel>ReadWrite</sharingModel>
