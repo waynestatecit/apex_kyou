@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+This file is part of WSU_Kyou, a Salesforce native queue for Batch Apex and Scheduled Apex.
+
+Copyright 2013-2014, Wayne State University
+License: 3-clause BSD license.  See LICENSE.
+-->
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Tracks open priority slots Kyou.</description>
+    <label>Kyou Open Slots</label>
+    <nameField>
+        <label>Open Slots ID</label>
+        <type>AutoNumber</type>
+        <displayFormat>K_OS-{0}</displayFormat>
+    </nameField>
+    <fields>
+        <fullName>Data__c</fullName>
+        <externalId>false</externalId>
+        <label>Data</label>
+        <type>LongTextArea</type>
+        <length>32768</length>
+        <visibleLines>2</visibleLines>
+    </fields>
+    <pluralLabel>Kyou Open Slots Records</pluralLabel>
+    <sharingModel>ReadWrite</sharingModel>
+</CustomObject>
