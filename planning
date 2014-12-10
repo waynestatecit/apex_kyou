@@ -1,0 +1,104 @@
+linked list ordering
+---
+
+- Right now the whole list needs to get loaded when a user wants to do anything
+  - Hard on cpu time
+  - Mitigate by making adds Queueable
+
+- Fast to add, once the whole thing is in memory
+- What can be added dependent on what's already there
+
+- One strategy would to take adds that aren't linked to the rest of what's there, then reconcile them later
+
+- THE BIG PROBLEM is that paging through this list in the UI will be really really slow, because I'll have to load the
+  whole thing in a @RemoteAccess apex method each time I want to just fetch a page.
+
+- It's bad to not know when you'll hit the cpu time limit when trying just to invoke the thing to run some entries.
+
+
+decimal db ordering
+---
+
+- inserting one might cause lots of DMLs needed
+  - mitigate by always adding with queueable?
+  - to avoid the 50 concurrent queueable limit, this means that Kyou.enqueueBatch() will need to be able to take more
+    than one at the same time so the list can be processed in one queueable
+
+- perhaps keeps a record of the empty decimal slots
+  - salesforce can hold 18 places left of decimal, at least 100 to the right
+
+- easier to do stuff like paginate because you can load in chunks just with SOQL
+
+
+stream of consciousness justification for the current design: (I hope you enjoy)
+---
+
+Do I preload everything?  This means I can't support > 50k records.
+
+Let's assume not for now.
+
+The point here is that I will have a bunch of entries that I need to insert.
+Each may have some kind of requested priority number.
+Going from the first of the new ones to the last, I need to see if the requested
+number is taken.  if it is, i need to move enough existing entries to LARGER priority
+numbers until I have room for all of them.
+
+Is there some kind of limit to the number of entries I can add with this plan?
+Say, if i want to add 1000, but i have to move 10000 to make room for them - this is too many DML rows.
+One option is to allow a small number of entries for an add call that specifies a non-end position.
+With this strategy, i would still need to ensure that there was never a consecutively occupied
+section of over 10000 priorities.  Could the maintenance job look for this if it knows from some
+kyou info object record about what slots are available?
+Maybe after I decide on the exact optimum spacing i can decide what this add limit should be.
+
+An add call that just goes on the end could send me 9999 entries (saving one for updating the kyou status
+record).
+
+Do I even need this List thing?  i wrote it assuming that i'd always have the full list in memory.
+Now i won't.  can this go in Kyou main?  the run query is going to be like order by priority limit 5 anyway.
+And if booking object knows what the smallest priority is, i can avoid the 50k limit by being selective here.
+Maybe make the range 50k, and if the gap is bigger than that, i don't care and i'll get it the next time the
+kicker goes.
+
+If I'm going to allow any number of entries, do I need to check for storage problems?  I guess this would be
+in the form of DML failure.  Howin the world to handle this?  I guess i can't, because I can't exactly insert
+a status record after storage is full.
+
+MAINTENANCE: solved.
+A periodic batch apex job ('normalizer'?) should periodically fix all enries back to some
+optimum spacing, and push the start entry up to near 0.
+But how can this run wthout locking the kyou entries?
+How would I protect against the Kyou getting kicked while this was going?
+Could this job use the Kyou itself to be enqueued?
+Or could this somehow be achieved on the fly without the maintenance things?
+How could it be if this doCommit() won't ever be expected to grab the whole shebang?
+The need for this maintenance is to keep adds quick by avoiding large sections of used
+priority numbers, and to make sure the numbers don't creep higher and higher with normal use.
+
+What about some rules that kick this off?  Say, if doCommit() can detect thatthe lowest priority number
+is say, > 1000, or if it has to look past say 1000 entries to find an opening.
+
+Is there a way to do this without locking the entire queue?  That seems like it would be really bad.  How
+would user code recover?  There's no way to sleep.  UNLESS the queueable that does the adding can respawn
+itself if the kyou is locked!  or even scheduleBatch() chain itself.  The scheduleBatch chain seems safer as
+this is beholden to the higher async limit.. but wait, this will silently fail is there are no spaces in the
+real apex batch queue available when it tries to run.  Using queueable chaining doesn't depend on the open
+batch queue slots, ?  That seems like it would be really bad.  How would user code recover?  There's no way
+to sleep.  UNLESS the queueable that does the adding can respawn itself if the kyou is locked!  or even
+scheduleBatch() chain itself.  The scheduleBatch chain seems safer as
+this is beholden to the higher async limit.. but wait, this will silently fail is there are no spaces in the
+real apex batch queue available when it tries to run.  Using queueable chaining doesn't depend on an open
+batch queue slot, but would run against the 50 open queuable jobs limit.
+Probable solution: use queueable chaining, but check in the chain maker inside the queueable execute() for
+the limit.  if you're going to hit it, save information about what failed in a known place and provide a
+static call in Kyou main class so it can be checked.  ideally, user code would check for this periodically
+(perhaps in finish() of implementation class?) and an easy way to retry should be provided (like if checker
+method doesn't return null then something failed, and it returns something that can just be passed to
+Kyou.enqueueBatch() to try again.  Ideally as part of a single call, as part of a list that's coming in
+already of stuff to enqueue.).  Actually it's better to do this in the Kyou kicker as noted below.
+OK THE MAINTENANCE STUFF IS SOLVED. lock the queue, unlock at the end.  use some basic criteria in doCommit()
+to decide when to run maintenance.  because adding to the kyou will always be via a queueable, it can be
+smart about dealing with a locked queue by reenqueuing itself.  if it tries and the limit is reached, saVe it
+somewhere in a status object.  Then (even better than above) the kicker can check for this first, if found,
+first recover the missed adds then try to run if possible.
+
