@@ -8,6 +8,7 @@ public class WSU_Kyou_QueueEntryTest {
     private static WSU_Kyou_QueueEntry entry1 = null;
     private static ID rawEntryId1 = null;
 
+    /*
     static {
         entry1 = new WSU_Kyou_QueueEntry();
         entry1.generateQueueEntry(WSU_Kyou_ListBatchable_Testing.class, 1, null, null);
@@ -152,6 +153,6 @@ public class WSU_Kyou_QueueEntryTest {
         System.assertEquals(entry.size, null);
         System.assertEquals(entry.args, null);
     }
-
+    */
 
 }

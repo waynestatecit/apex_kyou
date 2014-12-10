@@ -12,6 +12,7 @@ public class WSU_Kyou_QueueEntryListTest {
     private static Map<String, String> initialEntryTagToNext = new Map<String, String>();
     private static Map<String, String> initialEntryNextToTag = new Map<String, String>();
 
+    /*
     static {
         // The first one inserted will have a null next, so is the end of the list.
         // The last one inserted will have nothing pointing to it, so is the start of the list.
@@ -708,4 +709,5 @@ public class WSU_Kyou_QueueEntryListTest {
         // Make sure the any more calls return null
         System.assertEquals(existingEntries.popFirst(false), null);
     }
+    */
 }

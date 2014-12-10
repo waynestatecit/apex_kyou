@@ -3,7 +3,8 @@
 // Copyright 2013-2014, Wayne State University
 // License: 3-clause BSD license.  See LICENSE.
 
-public class WSU_Kyou_QueueEntryList implements Iterator<WSU_SObject> {
+//public class WSU_Kyou_QueueEntryList implements Iterator<WSU_SObject> {
+public class WSU_Kyou_QueueEntryList {
     // Entries are identified by tags.  If an entry has a database ID, this ID is its tag.
     // If not, we make one up while the ID is not yet assigned.
     @TestVisible
@@ -34,6 +35,7 @@ public class WSU_Kyou_QueueEntryList implements Iterator<WSU_SObject> {
     public WSU_Kyou_QueueEntryList() {
     }
 
+    /*
     public WSU_Kyou_QueueEntryList(Map<ID, WSU_SObject> incomingEntriesMap) {
         // First, this needs to be able to take data states where there is more than one distinct linked list in the
         // object space.  Somehow order by biggest to smallest?
@@ -72,7 +74,9 @@ public class WSU_Kyou_QueueEntryList implements Iterator<WSU_SObject> {
                                             // points
         startTag = currentTag = new List<String>(ids).get(0);
     }
+    */
 
+    /*
     private String getTag() {
         String toReturn = String.valueOf(tagCounter);
         tagCounter++;
@@ -207,8 +211,10 @@ public class WSU_Kyou_QueueEntryList implements Iterator<WSU_SObject> {
 
         reset();
     }
+    */
 
     public void doCommit() {
+        /*
         if (entries.size() == 0) {
             return;
         }
@@ -305,6 +311,7 @@ public class WSU_Kyou_QueueEntryList implements Iterator<WSU_SObject> {
         tagsWithNextsToUpdate.clear();
         // Clear tagsWithNextsToUpdateRev
         tagsWithNextsToUpdateRev.clear();
+        */
     }
 
     public class QueueEntryListException extends Exception {}

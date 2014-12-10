@@ -130,12 +130,13 @@ public class WSU_Kyou_QueueEntry extends WSU_SObject {
             'object_list' => startReturnsObjectList
         };
 
-        sobj = new WSU_Kyou_QueueEntry__c(
-            Data__c = JSON.serialize(newData),
-            Next__c = inFrontOf == null ? null : inFrontOf
-        );
+        //sobj = new WSU_Kyou_QueueEntry__c(
+            //Data__c = JSON.serialize(newData),
+            //Next__c = inFrontOf == null ? null : inFrontOf
+        //);
 
-        return (WSU_Kyou_QueueEntry__c)sobj;
+        //return (WSU_Kyou_QueueEntry__c)sobj;
+        return null;
     }
 
     public class QueueEntryException extends Exception {}
