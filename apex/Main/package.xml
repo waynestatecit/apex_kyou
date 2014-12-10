@@ -3,10 +3,7 @@
     <types>
         <members>WSU_Kyou</members>
         <members>WSU_KyouTest</members>
-        <members>WSU_Kyou_QueueEntry</members>
-        <members>WSU_Kyou_QueueEntryTest</members>
-        <members>WSU_Kyou_QueueEntryList</members>
-        <members>WSU_Kyou_QueueEntryListTest</members>
+        <members>WSU_KyouSavedAddsTest</members>
         <members>WSU_Kyou_Batchable</members>
         <members>WSU_Kyou_Batchable_Over_List</members>
         <members>WSU_Kyou_Batchable_Over_Object_List</members>
@@ -14,6 +11,8 @@
         <members>WSU_Kyou_ListBatchable_Testing</members>
         <members>WSU_Kyou_ObjectListBatchable_Testing</members>
         <members>WSU_Kyou_Batchable_Testing</members>
+        <members>WSU_Kyou_Add</members>
+        <members>WSU_Kyou_AddTest</members>
         <name>ApexClass</name>
     </types>
     <version>31.0</version>
