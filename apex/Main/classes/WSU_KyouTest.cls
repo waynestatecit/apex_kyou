@@ -76,6 +76,39 @@ public class WSU_KyouTest {
         System.assertEquals(WSU_Kyou.entriesReadyToCommit.size(), 0);
     }
 
+    static testMethod void testEnqueueBatchForcedCommit() {
+        Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+        ID returned = WSU_Kyou.enqueueBatch(WSU_Kyou_Batchable_Testing.class, null, null, null, false, false, false, false);
+        Integer after = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
+
+        // Nothing ran
+        System.assertEquals(before, after);
+
+        // No commit yet
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 0);
+
+        WSU_Kyou.setForceAdder(true);
+
+        //Test.startTest();
+        WSU_Kyou.doCommit();
+        //Test.stopTest();
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Data__c, Priority__c from WSU_Kyou_QueueEntry__c];
+        System.assertEquals(entries.size(), 1);
+        System.assertEquals(entries.get(0).Priority__c.intValue(), 0);
+
+        Map<String, Object> expectedEntries = new Map<String, Object>{
+            'class' => 'WSU_Kyou_Batchable_Testing',
+            'args' => null,
+            'size' => null,
+            'list' => false,
+            'object_list' => false
+        };
+
+        System.assert(expectedEntries.equals((Map<String, Object>)JSON.deserializeUntyped(entries.get(0).Data__c)));
+        System.assertEquals(WSU_Kyou.entriesReadyToCommit.size(), 0);
+    }
+
     static testMethod void testEnqueueBatchAutoCommit() {
         Integer before = [select count() from AsyncApexJob where (Status = 'Queued' or Status = 'Processing' or Status = 'Preparing') and JobType = 'BatchApex'];
         Test.startTest();

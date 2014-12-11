@@ -26,6 +26,7 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     private static Boolean perpetuateInFinish = false;
     private static Boolean drasticMeasures = false;
     private static Boolean forceDrasticMeasures = false;
+    private static Boolean forceAdder = false;
     private static Integer waitMinutes = 5; // The default is to schedule the batch in 5 minutes
 
     public WSU_Kyou() {
@@ -73,6 +74,10 @@ public class WSU_Kyou implements Database.Batchable<Object> {
         perpetuateInFinish = perpetuateInFinishArg;
         drasticMeasures = drasticMeasuresArg;
         forceDrasticMeasures = forceDrasticMeasuresArg;
+    }
+
+    public static void setForceAdder(Boolean forceAdderArg) {
+        forceAdder = forceAdderArg;
     }
 
     public static Integer slotsAvailable() {
@@ -340,24 +345,39 @@ public class WSU_Kyou implements Database.Batchable<Object> {
         entriesReadyToCommit.clear();
         return toReturn;
     }
+
     public static ID doCommit(List<Map<String, Object>> entries) {
         ID toReturn = null;
+        // The isRunningTest() condition is because of the bug here:
+        // https://success.salesforce.com/issues_view?id=a1p300000008XM1AAM
+        // If this bug gets fixed, remove this condition.
         if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) { // We're not at the limit
-            if (entries.size() > 0) {
-                // This condition is because of the bug here:
-                // https://success.salesforce.com/issues_view?id=a1p300000008XM1AAM
-                // If this bug gets fixed, remove this condition.
-                if (!Test.isRunningTest()) {
+            if (!Test.isRunningTest()) {
+                if (entries.size() > 0) {
                     toReturn = System.enqueueJob(new WSU_Kyou_Add(entries));
+                }
+            } else {
+                if (forceAdder) {
+                    // run the add code anyway in test context
+                    executeAdder(entries);
                 }
             }
         } else {
-            // FIXME: add a flag for running the add code anyway in this invocation space if we're at the Queueable
-            // limit
-            throw new KyouException('The org Queueable Job limit of ' + Limits.getLimitQueueableJobs() + ' has been reached.  Try again later.');
+            if (forceAdder) {
+                // run the add code anyway in this invocation space if we're at the Queueable limit
+                executeAdder(entries);
+            } else {
+                throw new KyouException('The org Queueable Job limit of ' + Limits.getLimitQueueableJobs() + ' has been reached.  Try again later.');
+            }
         }
 
         return toReturn;
+    }
+
+    private static void executeAdder(List<Map<String, Object>> entries) {
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(entries);
+        QueueableContext qc = null;
+        adder.execute(qc);
     }
 
     private static ID executeBatch(Type batchableType, Map<String, Object> args, Integer batchSize, Boolean startReturnsList, Boolean startReturnsObjectList) {
