@@ -18,6 +18,9 @@ public class WSU_KyouTest {
                 LastName = 'ORIGINAL2'
             )
         });
+
+        // Protect tests from platform bug while deploying to production
+        WSU_Kyou.setForceAdder(true);
     }
 
     static testMethod void testEnqueueBatchNoCommit() {
