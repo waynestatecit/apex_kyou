@@ -186,6 +186,7 @@ public class WSU_Kyou implements Database.Batchable<Object> {
 
             List<WSU_Kyou_QueueEntry__c> entries = [select Id, Data__c, Priority__c from WSU_Kyou_QueueEntry__c where Priority__c in :foundEntries order by Priority__c];
 
+            List<WSU_Kyou_QueueEntry__c> toDelete = new List<WSU_Kyou_QueueEntry__c>();
             while (slotsAvailable() > 0 && entries.size() > 0) {
                 WSU_Kyou_QueueEntry__c entry = entries.remove(0);
                 Map<String, Object> entryData = (Map<String, Object>)JSON.deserializeUntyped(entry.Data__c);
@@ -204,10 +205,15 @@ public class WSU_Kyou implements Database.Batchable<Object> {
                     kyouInfo.Highest_Priority__c = null;
                     kyouInfo.Lowest_Priority__c = null;
                 }
+
+                toDelete.add(entry);
+
                 if (Test.isRunningTest()) { // test context only allows one Database.executeBatch() call
                     break;
                 }
             }
+
+            List<Database.DeleteResult> delResults = Database.Delete(toDelete);
 
             // Save new open slots
             if (kyouInfo.Highest_Priority__c == null) {
@@ -424,7 +430,10 @@ public class WSU_Kyou implements Database.Batchable<Object> {
                     entries.add((Map<String, Object>)entryObj);
                 }
             }
-            ID ignore = System.enqueueJob(new WSU_Kyou_Add(entries));
+            // FOR THAT BUG ARGH
+            if (!Test.isRunningTest()) {
+                ID ignore = System.enqueueJob(new WSU_Kyou_Add(entries));
+            }
             List<Database.DeleteResult> delResults = Database.Delete(savedAdds);
         } else {
             WSU_Kyou_Options__c options = WSU_Kyou_Options__c.getInstance('options');

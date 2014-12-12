@@ -459,6 +459,8 @@ public class WSU_KyouTest {
         System.assertEquals(infoAfter.Lowest_Priority__c, null); // None left
 
         System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 0);
     }
 
     static testMethod void testRunOneWithResults() {
@@ -513,6 +515,8 @@ public class WSU_KyouTest {
         System.assertEquals(infoAfter.Lowest_Priority__c, null); // None left
 
         System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 0);
         Test.stopTest();
         System.assert(WSU_Kyou.latestImplementation instanceof WSU_Kyou_Batchable_Testing);
 
@@ -574,6 +578,8 @@ public class WSU_KyouTest {
         System.assertEquals(infoAfter.Lowest_Priority__c, null); // None left
 
         System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 0);
         Test.stopTest();
         System.assert(WSU_Kyou.latestImplementation instanceof WSU_Kyou_Batchable_Testing);
 
@@ -633,6 +639,8 @@ public class WSU_KyouTest {
         System.assertEquals(infoAfter.Lowest_Priority__c, null); // None left
 
         System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 0);
 
         // Now WSU_Kyou_Batchable_Testing will complete, making all of the LastNames == 'DEFAULT'.
         Test.stopTest();
@@ -695,6 +703,9 @@ public class WSU_KyouTest {
         System.assert(kyouInfoId.contains(infoAfter.Id));
 
         System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+
+        // Queue Entry is still there
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 1);
     }
 
     static testMethod void testPerpetuateInFinish() {
