@@ -895,7 +895,8 @@ public class WSU_Kyou_AddTest {
                 Data__c = '"whatever2"'
             ),
             new WSU_Kyou_Info__c(
-                Name = 'KyouInfo',
+                Name = 'KyouInfoAddTest', // Naming this something else as parallel tests will complain about row
+                                          // locking if I don't
                 Locked__c = false,
                 Highest_Priority__c = 10,
                 Lowest_Priority__c = 12

@@ -900,5 +900,126 @@ public class WSU_KyouTest {
         System.assert(!success);
     }
 
+    static testMethod void testBatchableFinishSavedAdds() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_Saved_Add__c(
+                Data__c = '[{"something or":"other"}]'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 0,
+                Data__c = JSON.serialize(new Map<String, Object>{
+                    'class' => 'WSU_Kyou_Batchable_Testing',
+                    'args' => null,
+                    'size' => null,
+                    'list' => false,
+                    'object_list' => false
+                })
+            ),
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfo',
+                Lowest_Priority__c = 0,
+                Highest_Priority__c = 0,
+                Locked__c = false
+            )
+        });
+
+        WSU_Kyou kyou = new WSU_Kyou();
+        Database.BatchableContext bc = null;
+        Test.startTest();
+        kyou.finish(bc);
+        Test.stopTest();
+
+        // We can't test that the adder got run, because the bug is forcing us to omit the enqueueJob() call in test
+        // context
+
+        System.assertEquals([select count() from WSU_Kyou_Saved_Add__c], 0); // it's gone now
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 1); // it's still there, run() didn't go
+    }
+
+    static testMethod void testBatchableFinishNoKyouInfo() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_Options__c(
+                Name = 'options',
+                Wait_Minutes__c = 5,
+                Perpetuate_In_Run__c = false,
+                Perpetuate_In_Finish__c = false,
+                Drastic_Measures__c = false
+            )
+        });
+
+        WSU_Kyou kyou = new WSU_Kyou();
+        Database.BatchableContext bc = null;
+        Test.startTest();
+        kyou.finish(bc);
+        Test.stopTest();
+
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 0); // redundant yeah, no real way to tell
+                                                                              // that run() ran
+    }
+
+    static testMethod void testBatchableFinishKyouInfoHighestPriorityNull() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfoKyouTest',
+                Lowest_Priority__c = null,
+                Highest_Priority__c = null,
+                Locked__c = false
+            ),
+            new WSU_Kyou_Options__c(
+                Name = 'options',
+                Wait_Minutes__c = 5,
+                Perpetuate_In_Run__c = false,
+                Perpetuate_In_Finish__c = false,
+                Drastic_Measures__c = false
+            )
+        });
+
+        WSU_Kyou kyou = new WSU_Kyou();
+        Database.BatchableContext bc = null;
+        Test.startTest();
+        kyou.finish(bc);
+        Test.stopTest();
+
+        System.assertEquals([select count() from WSU_Kyou_QueueEntry__c], 0); // redundant yeah, no real way to tell
+                                                                              // that run() ran
+    }
+
+    static testMethod void testBatchableFinishMaintainBigHighestPriority() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1001,
+                Data__c = JSON.serialize(new Map<String, Object>{
+                    'class' => 'WSU_Kyou_Batchable_Testing',
+                    'args' => null,
+                    'size' => null,
+                    'list' => false,
+                    'object_list' => false
+                })
+            ),
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfo',
+                Lowest_Priority__c = 1001,
+                Highest_Priority__c = 1001,
+                Locked__c = false
+            )
+
+        });
+
+        WSU_Kyou kyou = new WSU_Kyou();
+        Database.BatchableContext bc = null;
+        Test.startTest();
+        kyou.finish(bc);
+        Test.stopTest();
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Data__c, Priority__c from WSU_Kyou_QueueEntry__c];
+        System.assertEquals(entries.size(), 1);
+        WSU_Kyou_QueueEntry__c entry = entries.get(0);
+        System.assertEquals(entry.Priority__c.intValue(), 0);
+        System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+        WSU_Kyou_Info__c kyouInfo = WSU_Kyou_Info__c.getAll().values().get(0);
+        System.assertEquals(kyouInfo.Highest_Priority__c.intValue(), 0);
+        System.assertEquals(kyouInfo.Lowest_Priority__c.intValue(), 0);
+        System.assert(!kyouInfo.Locked__c);
+    }
 
 }

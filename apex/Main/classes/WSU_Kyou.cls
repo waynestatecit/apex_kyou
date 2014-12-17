@@ -283,7 +283,7 @@ public class WSU_Kyou implements Database.Batchable<Object> {
         if (numScheduled == 0) {
             try {
                 // The constructor args inside ScheduleBatch() seem to get lost when the batch finally runs
-                // So save them here and recall them in WSU_Kyou.start()
+                // So save them here and recall them in WSU_Kyou.finish()
                 List<Database.DeleteResult> deleteResults = Database.Delete(WSU_Kyou_Options__c.getAll().values());
                 Database.SaveResult result = Database.Insert(new WSU_Kyou_Options__c(
                     Name = 'options',
@@ -436,6 +436,34 @@ public class WSU_Kyou implements Database.Batchable<Object> {
             }
             List<Database.DeleteResult> delResults = Database.Delete(savedAdds);
         } else {
+            // Check if maintenance is needed
+            List<WSU_Kyou_Info__c> kyouInfos = WSU_Kyou_Info__c.getAll().values();
+            System.assert(kyouInfos.size() <= 1);
+            if (kyouInfos.size() == 1) {
+                // Criteria for spawning maintenance instead of running jobs
+                WSU_Kyou_Info__c kyouInfo = kyouInfos.get(0);
+                if (kyouInfo.Highest_Priority__c != null && kyouInfo.Highest_Priority__c.intValue() > 1000) { // highest priority getting too far away from zero
+                    ID ignore = Database.executeBatch(new WSU_Kyou_Maintainer());
+                    return;
+                } else {
+                    // Check gaps - if there are any spans of > 100 slots with no openings, run maintenance
+                    List<WSU_Kyou_Open_Slots__c> openSlotsRecords = [select Data__c from WSU_Kyou_Open_Slots__c];
+                    List<Integer> openSlots = new List<Integer>();
+                    for (WSU_Kyou_Open_Slots__c openSlotsRecord : openSlotsRecords) {
+                        for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(openSlotsRecord.Data__c)) {
+                            openSlots.add((Integer)openSlotObj);
+                        }
+                    }
+                    openSlots.sort();
+                    for (Integer i = 0; i < openSlots.size() - 1; i++) {
+                        if (openSlots.get(i + 1) - openSlots.get(i) > 100) {
+                            ID ignore = Database.executeBatch(new WSU_Kyou_Maintainer());
+                            return;
+                        }
+                    }
+                }
+            }
+
             WSU_Kyou_Options__c options = WSU_Kyou_Options__c.getInstance('options');
             setOptions(options.Wait_Minutes__c.intValue(), options.Perpetuate_In_Run__c, options.Perpetuate_In_Finish__c, options.Drastic_Measures__c);
             Database.DeleteResult result = Database.Delete(options);

@@ -65,7 +65,7 @@ in the form of DML failure.  Howin the world to handle this?  I guess i can't, b
 a status record after storage is full.
 
 MAINTENANCE: solved.
-A periodic batch apex job ('normalizer'?) should periodically fix all enries back to some
+A periodic batch apex job ('normalizer'?) should periodically fix all entries back to some
 optimum spacing, and push the start entry up to near 0.
 But how can this run wthout locking the kyou entries?
 How would I protect against the Kyou getting kicked while this was going?
