@@ -135,6 +135,44 @@ public class WSU_Kyou implements Database.Batchable<Object> {
         List<Database.SaveResult> insertResults = Database.Insert(toInsert);
     }
 
+    public static Map<String, Object> determinePriorities(WSU_Kyou_Info__c kyouInfo, Set<Integer> openSlots, Integer offset, Integer returnSize) {
+        List<Integer> foundEntries = new List<Integer>();
+        Boolean more = null;
+        if (kyouInfo.Highest_Priority__c != null && returnSize > 0) {
+            // Use openSlots to decide which priorities you want to grab
+            Integer i = kyouInfo.Highest_Priority__c.intValue() + 1;
+            Integer skipped = 0;
+            if (offset > 0) {
+                skipped++;
+            } else {
+                foundEntries.add(kyouInfo.Highest_Priority__c.intValue());
+            }
+            while (foundEntries.size() < returnSize && i <= kyouInfo.Lowest_Priority__c.intValue()) {
+                // We know the max we can run is maxBatchables, so grab maxBatchables + 1 now and check slotsAvailable() later
+                // We grab maxBatchables + 1 so if we use all maxBatchables, we can set the new Highest_Priority__c to the sixth
+                if (!openSlots.contains(i)) {
+                    if (skipped < offset) {
+                        skipped++;
+                    } else {
+                        foundEntries.add(i);
+                    }
+                }
+                i++;
+            }
+            if (i > kyouInfo.Lowest_Priority__c.intValue()) {
+                more = false;
+            } else {
+                more = true;
+            }
+        } // else this is a locked, empty Kyou
+        // foundEntries is now ordered from highest to lowest priority
+
+        return new Map<String, Object>{
+            'priorities' => foundEntries,
+            'more' => more
+        };
+    }
+
     // run() shouldn't be run directly.  It only gets run via the WSU_Kyou.finish() method.  All other ways to invoke
     // involve System.scheduleBatch() of WSU_Kyou or directly Database.executeBatch() of WSU_Kyou when drasticMeasures
     // is true.
@@ -168,21 +206,7 @@ public class WSU_Kyou implements Database.Batchable<Object> {
             Set<Integer> openSlots = (Set<Integer>)openSlotsResults.get(0);
             List<WSU_Kyou_Open_Slots__c> openSlotsRecords = (List<WSU_Kyou_Open_Slots__c>)openSlotsResults.get(1);
 
-            List<Integer> foundEntries = new List<Integer>();
-            if (kyouInfo.Highest_Priority__c != null) {
-                // Use openSlots to decide which priorities you want to grab
-                Integer i = kyouInfo.Highest_Priority__c.intValue() + 1;
-                foundEntries.add(kyouInfo.Highest_Priority__c.intValue());
-                while (foundEntries.size() < maxBatchables + 1 && i <= kyouInfo.Lowest_Priority__c.intValue()) {
-                    // We know the max we can run is maxBatchables, so grab maxBatchables + 1 now and check slotsAvailable() later
-                    // We grab maxBatchables + 1 so if we use all maxBatchables, we can set the new Highest_Priority__c to the sixth
-                    if (!openSlots.contains(i)) {
-                        foundEntries.add(i);
-                    }
-                    i++;
-                }
-            } // else this is a locked, empty Kyou
-            // foundEntries is now ordered from highest to lowest priority
+            List<Integer> foundEntries = (List<Integer>)determinePriorities(kyouInfo, openSlots, 0, maxBatchables + 1).get('priorities');
 
             List<WSU_Kyou_QueueEntry__c> entries = [select Id, Data__c, Priority__c from WSU_Kyou_QueueEntry__c where Priority__c in :foundEntries order by Priority__c];
 

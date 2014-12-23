@@ -1022,4 +1022,96 @@ public class WSU_KyouTest {
         System.assert(!kyouInfo.Locked__c);
     }
 
+    static testMethod void testDeterminePrioritiesMoreFalse() {
+        WSU_Kyou_Info__c kyouInfo = new WSU_Kyou_Info__c(
+            Name = 'KyouInfo',
+            Lowest_Priority__c = 0,
+            Highest_Priority__c = 0,
+            Locked__c = false
+        );
+
+        Map<String, Object> prioritiesMap = WSU_Kyou.determinePriorities(
+            kyouInfo,
+            new Set<Integer>(),
+            0,
+            6
+        );
+
+        Map<String, Object> expected = new Map<String, Object>{
+            'priorities' => (Object)new List<Integer>{0},
+            'more' => false
+        };
+
+        System.assert(prioritiesMap.equals(expected));
+    }
+
+    static testMethod void testDeterminePrioritiesBiggerRangeNoSkips() {
+        WSU_Kyou_Info__c kyouInfo = new WSU_Kyou_Info__c(
+            Name = 'KyouInfo',
+            Lowest_Priority__c = 100,
+            Highest_Priority__c = 0,
+            Locked__c = false
+        );
+
+        Map<String, Object> prioritiesMap = WSU_Kyou.determinePriorities(
+            kyouInfo,
+            new Set<Integer>{12, 15},
+            0,
+            12
+        );
+
+        Map<String, Object> expected = new Map<String, Object>{
+            'priorities' => (Object)new List<Integer>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11},
+            'more' => true
+        };
+
+        System.assert(prioritiesMap.equals(expected));
+    }
+
+    static testMethod void testDeterminePrioritiesBiggerRangeOneSkip() {
+        WSU_Kyou_Info__c kyouInfo = new WSU_Kyou_Info__c(
+            Name = 'KyouInfo',
+            Lowest_Priority__c = 100,
+            Highest_Priority__c = 0,
+            Locked__c = false
+        );
+
+        Map<String, Object> prioritiesMap = WSU_Kyou.determinePriorities(
+            kyouInfo,
+            new Set<Integer>{12, 15},
+            0,
+            13
+        );
+
+        Map<String, Object> expected = new Map<String, Object>{
+            'priorities' => (Object)new List<Integer>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13},
+            'more' => true
+        };
+
+        System.assert(prioritiesMap.equals(expected));
+    }
+
+    static testMethod void testDeterminePrioritiesBiggerRangeOneSkipOffset() {
+        WSU_Kyou_Info__c kyouInfo = new WSU_Kyou_Info__c(
+            Name = 'KyouInfo',
+            Lowest_Priority__c = 100,
+            Highest_Priority__c = 0,
+            Locked__c = false
+        );
+
+        Map<String, Object> prioritiesMap = WSU_Kyou.determinePriorities(
+            kyouInfo,
+            new Set<Integer>{12, 15},
+            2,
+            13
+        );
+
+        Map<String, Object> expected = new Map<String, Object>{
+            'priorities' => (Object)new List<Integer>{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 16},
+            'more' => true
+        };
+
+        System.assert(prioritiesMap.equals(expected));
+    }
+
 }

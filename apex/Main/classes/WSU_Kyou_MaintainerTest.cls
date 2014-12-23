@@ -207,7 +207,8 @@ public class WSU_Kyou_MaintainerTest {
         orderedPriorities.sort();
 
         toInsert.add(new WSU_Kyou_Info__c(
-            Name = 'KyouInfo',
+            Name = 'KyouInfoMaint', // Naming this something else as parallel tests will complain about row
+                                    // locking if I don't
             Locked__c = false,
             Highest_Priority__c = highestPriority,
             Lowest_Priority__c = lowestPriority
