@@ -1,0 +1,117 @@
+<apex:page controller="WSU_Kyou_Controller" docType="html-5.0" cache="false">
+<head>
+    <title>Kyou</title>
+    <apex:stylesheet value="{!URLFOR($Resource.kyoucssZip, 'css/jqueryui/jquery-ui.min.css')}" />
+    <apex:stylesheet value="{!URLFOR($Resource.kyoucssZip, 'css/main.css')}" />
+    <style>
+        .hidden {
+            display: none
+         }
+    </style>
+    <script data-main="{!URLFOR($Resource.kyoulibsZip, 'js/kyou.js')}" src="{!URLFOR($Resource.kyoulibsZip, 'js/requirejs/require.js')}"></script>
+    <script>
+        var sforceDomain = 'https://' + '{!$CurrentPage.URL}'.split('//')[1].split('/')[0];
+        var sforceUrl = sforceDomain + '/soap/ajax/32.0/connection';
+        var sforceSessionId = '{!$Api.Session_ID}';
+        var userId = '{!$User.Id}';
+
+        var dispatcher;
+
+        require.config({
+            paths: {
+                'jquery': 'jqueryjs/jquerymin',
+                'jqueryui': 'jquery-ui.min',
+                'org/cometd': 'cometd',
+                'jquery-cometd': 'jquery.cometd',
+                'spin': 'spin.min',
+                'sforce': sforceUrl,
+            },
+            shim: {
+                'underscorejs/underscoremin': {
+                    exports: '_',
+                },
+                'backbonejs/backbonemin': {
+                    deps: ['jquery','underscorejs/underscoremin'],
+                    exports: 'Backbone',
+                },
+                'sforce': {
+                    exports: 'sforce',
+                },
+                'jqueryui': {
+                    deps: ['jquery'],
+                },
+                'jquery-cometd': {
+                    deps: ['org/cometd', 'jquery'],
+                },
+                'spin': {
+                    exports: 'Spinner',
+                },
+            },
+        });
+
+        require([
+            'jquery',
+            'underscorejs/underscoremin',
+            'backbonejs/backbonemin',
+        ], function(
+            $,
+            _,
+            Backbone
+        ) {
+            dispatcher = {};
+            _.extend(dispatcher, Backbone.Events);
+        });
+
+        dispatcher.on('all', function(msg) {
+            console.log('DISPATCH');
+            console.log(msg);
+        });
+
+    </script>
+</head>
+<body>
+    <div id="kyou">
+        <apex:pageBlock id="kyou_status" title="Kyou Status" >
+            <apex:pageBlockSection>
+                <apex:outputText label="Perpetuating?">
+                    <span id="kyou-status-next-run"></span>
+                </apex:outputText>
+                <apex:outputText label="Locked?">
+                    <span id="kyou-status-locked"></span>
+                </apex:outputText>
+            </apex:pageBlockSection>
+        </apex:pageBlock>
+        <apex:pageBlock id="kyou_entries" title="Kyou Entries" >
+            <apex:pageBlockTable id="kyou-entry-table" value="{!samples}" var="sample">
+                <apex:column html-data-api-name="Id">
+                    <apex:facet name="header">Id</apex:facet>
+                </apex:column>
+                <apex:column html-data-api-name="Priority__c">
+                    <apex:facet name="header">Priority</apex:facet>
+                </apex:column>
+                <apex:column html-data-api-name="Data__c.class">
+                    <apex:facet name="header">Class</apex:facet>
+                </apex:column>
+                <apex:column html-data-api-name="Data__c.size">
+                    <apex:facet name="header">Size</apex:facet>
+                </apex:column>
+                <apex:column html-data-api-name="Data__c.list">
+                    <apex:facet name="header">Returns sObject List</apex:facet>
+                </apex:column>
+                <apex:column html-data-api-name="Data__c.object_list">
+                    <apex:facet name="header">Returns Object List</apex:facet>
+                </apex:column>
+                <apex:column html-data-api-name="Data__c.args" html-data-popup="true">
+                    <apex:facet name="header">Arguments</apex:facet>
+                </apex:column>
+                <apex:column>
+                    <apex:facet name="header">Actions</apex:facet>
+                </apex:column>
+            </apex:pageBlockTable>
+        </apex:pageBlock>
+        <apex:form>
+            <apex:actionFunction name="reRenderEntries" reRender="kyou_entries" action="{!doNothing}" oncomplete="dispatcher.trigger('kyou:reRenderEntryTable')" />
+        </apex:form>
+    </div>
+</body>
+</apex:page>

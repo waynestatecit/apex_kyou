@@ -15,6 +15,7 @@
         <members>WSU_Kyou_AddTest</members>
         <members>WSU_Kyou_Maintainer</members>
         <members>WSU_Kyou_MaintainerTest</members>
+        <members>WSU_Kyou_Controller</members>
         <name>ApexClass</name>
     </types>
     <version>31.0</version>

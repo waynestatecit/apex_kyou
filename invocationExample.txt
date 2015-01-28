@@ -1,0 +1,4 @@
+Currently used for production:
+
+WSU_Kyou.setOptions(20, true, false, true);
+WSU_Kyou.scheduleSelf();

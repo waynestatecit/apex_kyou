@@ -1041,4 +1041,579 @@ public class WSU_Kyou_AddTest {
     }
     */
 
+    static testMethod void testExecuteMoveLocked() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfo',
+                Locked__c = true,
+                Highest_Priority__c = 0,
+                Lowest_Priority__c = 1
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 0,
+                Data__c = '{"whatever0":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1,
+                Data__c = '{"whatever1":true}'
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toMove = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(2).getId()];
+        toMove.Priority__c = 0;
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            1 => toMove
+        });
+
+        QueueableContext qc = null;
+        Boolean success = true;
+        try {
+            adder.execute(qc);
+        } catch (WSU_Kyou_Add.Kyou_AddException e) {
+            success = false;
+            System.assertEquals(e.getMessage(), 'Cannot move while locked');
+        }
+        System.assert(!success);
+    }
+
+    static testMethod void testExecuteMoveOne() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfo',
+                Locked__c = false,
+                Highest_Priority__c = 0,
+                Lowest_Priority__c = 1
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 0,
+                Data__c = '{"whatever0":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1,
+                Data__c = '{"whatever1":true}'
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toMove = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(2).getId()];
+        toMove.Priority__c = 0;
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            1 => toMove
+        });
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+        System.assertEquals(entries.size(), 2);
+        System.assertEquals(entries.get(0).Priority__c.intValue(), 0);
+        System.assertEquals(entries.get(0).Data__c, '{"whatever1":true}'); // Swapped
+        System.assertEquals(entries.get(1).Priority__c.intValue(), 1);
+        System.assertEquals(entries.get(1).Data__c, '{"whatever0":true}'); // Swapped
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Lowest_Priority__c.intValue(), 1); // Nothing was done
+        System.assertEquals(afterInfo.Highest_Priority__c.intValue(), 0);
+        System.assert(!afterInfo.Locked__c);
+
+        System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+    }
+
+    static testMethod void testExecuteMoveExistingQueueGap() {
+        Set<Integer> openSlots = new Set<Integer>();
+        for (Integer i = 13; i < 1000; i++) {
+            openSlots.add(i);
+        }
+        WSU_Kyou.setOpenSlots(openSlots, new List<WSU_Kyou_Open_Slots__c>());
+
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 10,
+                Data__c = '{"whatever10":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 11,
+                Data__c = '{"whatever11":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 12,
+                Data__c = '{"whatever12":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1000,
+                Data__c = '{"whatever1000":true}'
+            ),
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfoAddTest2', // Naming this something else as parallel tests will complain about row
+                                           // locking if I don't
+                Locked__c = false,
+                Highest_Priority__c = 10,
+                Lowest_Priority__c = 1000
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toMove = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(2).getId()];
+        toMove.Priority__c = 10;
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            12 => toMove
+        });
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+
+        System.assertEquals(entries.size(), 4);
+        Map<Integer, String> allowedPrioritiesToData = new Map<Integer, String>{
+            10 => '{"whatever12":true}',
+            11 => '{"whatever10":true}',
+            12 => '{"whatever11":true}',
+            1000 => '{"whatever1000":true}'
+        };
+        for (WSU_Kyou_QueueEntry__c entry : entries) {
+            System.assert(allowedPrioritiesToData.containsKey(entry.Priority__c.intValue()));
+            String data = allowedPrioritiestoData.remove(entry.Priority__c.intValue());
+            System.assertEquals(data, entry.Data__c);
+        }
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Lowest_Priority__c.intValue(), 1000);
+        System.assertEquals(afterInfo.Highest_Priority__c.intValue(), 10);
+        System.assert(!afterInfo.Locked__c);
+
+        List<WSU_Kyou_Open_Slots__c> afterOpenSlotsRecords = [select Data__c from WSU_Kyou_Open_Slots__c];
+        Set<Integer> afterOpenSlots = new Set<Integer>();
+        for (WSU_Kyou_Open_Slots__c afterOpenSlotsRecord : afterOpenSlotsRecords) {
+            for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(afterOpenSlotsRecord.Data__c)) {
+                afterOpenSlots.add((Integer)openSlotObj);
+            }
+        }
+
+        Set<Integer> expectedOpenSlots = new Set<Integer>();
+        for (Integer i = 13; i < 1000; i++) {
+            expectedOpenSlots.add(i);
+        }
+
+        System.assert(expectedOpenSlots.equals(afterOpenSlots));
+    }
+
+    /* I can't seem to support multiple moves in one call.  The Update() call complains about duplicate values even if
+       all of the current rows are getting updated at the same time and there are no duplicates.  Platform bug?
+    static testMethod void testExecuteMoveTwoExistingQueueGap() {
+        Set<Integer> openSlots = new Set<Integer>();
+        for (Integer i = 13; i < 1000; i++) {
+            openSlots.add(i);
+        }
+        WSU_Kyou.setOpenSlots(openSlots, new List<WSU_Kyou_Open_Slots__c>());
+
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 10,
+                Data__c = '{"whatever10":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 11,
+                Data__c = '{"whatever11":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 12,
+                Data__c = '{"whatever12":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1000,
+                Data__c = '{"whatever1000":true}'
+            ),
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfoAddTest2', // Naming this something else as parallel tests will complain about row
+                                           // locking if I don't
+                Locked__c = false,
+                Highest_Priority__c = 10,
+                Lowest_Priority__c = 1000
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toMove1 = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(2).getId()];
+        toMove1.Priority__c = 10;
+        WSU_Kyou_QueueEntry__c toMove2 = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(3).getId()];
+        toMove2.Priority__c = 11;
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            12 => toMove1,
+            1000 => toMove2
+        });
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+
+        System.assertEquals(entries.size(), 4);
+        Map<Integer, String> allowedPrioritiesToData = new Map<Integer, String>{
+            10 => '{"whatever12":true}',
+            11 => '{"whatever1000":true}',
+            12 => '{"whatever10":true}',
+            13 => '{"whatever11":true}'
+        };
+        for (WSU_Kyou_QueueEntry__c entry : entries) {
+            System.assert(allowedPrioritiesToData.containsKey(entry.Priority__c.intValue()));
+            String data = allowedPrioritiestoData.remove(entry.Priority__c.intValue());
+            System.assertEquals(data, entry.Data__c);
+        }
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Lowest_Priority__c.intValue(), 13);
+        System.assertEquals(afterInfo.Highest_Priority__c.intValue(), 10);
+        System.assert(!afterInfo.Locked__c);
+
+        List<WSU_Kyou_Open_Slots__c> afterOpenSlotsRecords = [select Data__c from WSU_Kyou_Open_Slots__c];
+        Set<Integer> afterOpenSlots = new Set<Integer>();
+        for (WSU_Kyou_Open_Slots__c afterOpenSlotsRecord : afterOpenSlotsRecords) {
+            for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(afterOpenSlotsRecord.Data__c)) {
+                afterOpenSlots.add((Integer)openSlotObj);
+            }
+        }
+
+        Set<Integer> expectedOpenSlots = new Set<Integer>(); // Empty!
+
+        System.assert(expectedOpenSlots.equals(afterOpenSlots));
+    }
+    */
+
+    static testMethod void testExecuteMoveOverExistingQueueGap() {
+        Set<Integer> openSlots = new Set<Integer>();
+        for (Integer i = 13; i < 1000; i++) {
+            openSlots.add(i);
+        }
+        WSU_Kyou.setOpenSlots(openSlots, new List<WSU_Kyou_Open_Slots__c>());
+
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 10,
+                Data__c = '{"whatever10":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 11,
+                Data__c = '{"whatever11":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 12,
+                Data__c = '{"whatever12":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1000,
+                Data__c = '{"whatever1000":true}'
+            ),
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfoAddTest2', // Naming this something else as parallel tests will complain about row
+                                           // locking if I don't
+                Locked__c = false,
+                Highest_Priority__c = 10,
+                Lowest_Priority__c = 1000
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toMove = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(3).getId()];
+        toMove.Priority__c = 11;
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            1000 => toMove
+        });
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+
+        System.assertEquals(entries.size(), 4);
+        Map<Integer, String> allowedPrioritiesToData = new Map<Integer, String>{
+            10 => '{"whatever10":true}',
+            11 => '{"whatever1000":true}',
+            12 => '{"whatever11":true}',
+            13 => '{"whatever12":true}'
+        };
+        for (WSU_Kyou_QueueEntry__c entry : entries) {
+            System.assert(allowedPrioritiesToData.containsKey(entry.Priority__c.intValue()));
+            String data = allowedPrioritiestoData.remove(entry.Priority__c.intValue());
+            System.assertEquals(data, entry.Data__c);
+        }
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Lowest_Priority__c.intValue(), 13);
+        System.assertEquals(afterInfo.Highest_Priority__c.intValue(), 10);
+        System.assert(!afterInfo.Locked__c);
+
+        List<WSU_Kyou_Open_Slots__c> afterOpenSlotsRecords = [select Data__c from WSU_Kyou_Open_Slots__c];
+        Set<Integer> afterOpenSlots = new Set<Integer>();
+        for (WSU_Kyou_Open_Slots__c afterOpenSlotsRecord : afterOpenSlotsRecords) {
+            for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(afterOpenSlotsRecord.Data__c)) {
+                afterOpenSlots.add((Integer)openSlotObj);
+            }
+        }
+
+        Set<Integer> expectedOpenSlots = new Set<Integer>(); // Empty!
+
+        System.assert(expectedOpenSlots.equals(afterOpenSlots));
+    }
+
+    static testMethod void testExecuteMoveWayDownExistingQueueGap() {
+        Set<Integer> openSlots = new Set<Integer>();
+        for (Integer i = 13; i < 1000; i++) {
+            openSlots.add(i);
+        }
+        WSU_Kyou.setOpenSlots(openSlots, new List<WSU_Kyou_Open_Slots__c>());
+
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 10,
+                Data__c = '{"whatever10":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 11,
+                Data__c = '{"whatever11":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 12,
+                Data__c = '{"whatever12":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1000,
+                Data__c = '{"whatever1000":true}'
+            ),
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfoAddTest2', // Naming this something else as parallel tests will complain about row
+                                           // locking if I don't
+                Locked__c = false,
+                Highest_Priority__c = 10,
+                Lowest_Priority__c = 1000
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toMove = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(1).getId()];
+        toMove.Priority__c = 10001;
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            11 => toMove
+        });
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+
+        System.assertEquals(entries.size(), 4);
+        Map<Integer, String> allowedPrioritiesToData = new Map<Integer, String>{
+            10 => '{"whatever10":true}',
+            12 => '{"whatever12":true}',
+            1000 => '{"whatever1000":true}',
+            10001 => '{"whatever11":true}'
+        };
+        for (WSU_Kyou_QueueEntry__c entry : entries) {
+            System.assert(allowedPrioritiesToData.containsKey(entry.Priority__c.intValue()));
+            String data = allowedPrioritiestoData.remove(entry.Priority__c.intValue());
+            System.assertEquals(data, entry.Data__c);
+        }
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Lowest_Priority__c.intValue(), 10001);
+        System.assertEquals(afterInfo.Highest_Priority__c.intValue(), 10);
+        System.assert(!afterInfo.Locked__c);
+
+        List<WSU_Kyou_Open_Slots__c> afterOpenSlotsRecords = [select Data__c from WSU_Kyou_Open_Slots__c];
+        Set<Integer> afterOpenSlots = new Set<Integer>();
+        for (WSU_Kyou_Open_Slots__c afterOpenSlotsRecord : afterOpenSlotsRecords) {
+            for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(afterOpenSlotsRecord.Data__c)) {
+                afterOpenSlots.add((Integer)openSlotObj);
+            }
+        }
+
+        Set<Integer> expectedOpenSlots = new Set<Integer>{
+            11
+        };
+        for (Integer i = 13; i < 1000; i++) {
+            expectedOpenSlots.add(i);
+        }
+        for (Integer i = 1001; i < 10001; i++) {
+            expectedOpenSlots.add(i);
+        }
+
+        System.assert(expectedOpenSlots.equals(afterOpenSlots));
+    }
+
+    static testMethod void testExecuteMoveWayUpExistingQueueGap() {
+        Set<Integer> openSlots = new Set<Integer>();
+        for (Integer i = 13; i < 1000; i++) {
+            openSlots.add(i);
+        }
+        WSU_Kyou.setOpenSlots(openSlots, new List<WSU_Kyou_Open_Slots__c>());
+
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 10,
+                Data__c = '{"whatever10":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 11,
+                Data__c = '{"whatever11":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 12,
+                Data__c = '{"whatever12":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1000,
+                Data__c = '{"whatever1000":true}'
+            ),
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfoAddTest2', // Naming this something else as parallel tests will complain about row
+                                           // locking if I don't
+                Locked__c = false,
+                Highest_Priority__c = 10,
+                Lowest_Priority__c = 1000
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toMove = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(3).getId()];
+        toMove.Priority__c = 1;
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            1000 => toMove
+        });
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+
+        System.assertEquals(entries.size(), 4);
+        Map<Integer, String> allowedPrioritiesToData = new Map<Integer, String>{
+            1 => '{"whatever1000":true}',
+            10 => '{"whatever10":true}',
+            11 => '{"whatever11":true}',
+            12 => '{"whatever12":true}'
+        };
+        for (WSU_Kyou_QueueEntry__c entry : entries) {
+            System.assert(allowedPrioritiesToData.containsKey(entry.Priority__c.intValue()));
+            String data = allowedPrioritiestoData.remove(entry.Priority__c.intValue());
+            System.assertEquals(data, entry.Data__c);
+        }
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Lowest_Priority__c.intValue(), 12);
+        System.assertEquals(afterInfo.Highest_Priority__c.intValue(), 1);
+        System.assert(!afterInfo.Locked__c);
+
+        List<WSU_Kyou_Open_Slots__c> afterOpenSlotsRecords = [select Data__c from WSU_Kyou_Open_Slots__c];
+        Set<Integer> afterOpenSlots = new Set<Integer>();
+        for (WSU_Kyou_Open_Slots__c afterOpenSlotsRecord : afterOpenSlotsRecords) {
+            for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(afterOpenSlotsRecord.Data__c)) {
+                afterOpenSlots.add((Integer)openSlotObj);
+            }
+        }
+
+        Set<Integer> expectedOpenSlots = new Set<Integer>();
+        for (Integer i = 2; i < 10; i++) {
+            expectedOpenSlots.add(i);
+        }
+
+        System.assert(expectedOpenSlots.equals(afterOpenSlots));
+    }
+
+    static testMethod void testExecuteDeleteOne() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfo',
+                Locked__c = false,
+                Highest_Priority__c = 0,
+                Lowest_Priority__c = 1
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 0,
+                Data__c = '{"whatever0":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1,
+                Data__c = '{"whatever1":true}'
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toDelete = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(1).getId()];
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            0 => toDelete
+        }, true);
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+        System.assertEquals(entries.size(), 1);
+        System.assertEquals(entries.get(0).Priority__c.intValue(), 1);
+        System.assertEquals(entries.get(0).Data__c, '{"whatever1":true}'); // Swapped
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Lowest_Priority__c.intValue(), 1);
+        System.assertEquals(afterInfo.Highest_Priority__c.intValue(), 1);
+        System.assert(!afterInfo.Locked__c);
+
+        System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+    }
+
+    static testMethod void testExecuteDeleteBoth() {
+        List<Database.SaveResult> results = Database.Insert(new List<sObject>{
+            new WSU_Kyou_Info__c(
+                Name = 'KyouInfo',
+                Locked__c = false,
+                Highest_Priority__c = 0,
+                Lowest_Priority__c = 1
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 0,
+                Data__c = '{"whatever0":true}'
+            ),
+            new WSU_Kyou_QueueEntry__c(
+                Priority__c = 1,
+                Data__c = '{"whatever1":true}'
+            )
+        });
+
+        WSU_Kyou_QueueEntry__c toDelete0 = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(1).getId()];
+        WSU_Kyou_QueueEntry__c toDelete1 = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Id = :results.get(2).getId()];
+
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(new Map<Integer, WSU_Kyou_QueueEntry__c>{
+            0 => toDelete0,
+            1 => toDelete1
+        }, true);
+
+        QueueableContext qc = null;
+        adder.execute(qc);
+
+        List<WSU_Kyou_QueueEntry__c> entries = [select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c order by Priority__c];
+        System.assertEquals(entries.size(), 0);
+
+        List<WSU_Kyou_Info__c> afterInfos = WSU_Kyou_Info__c.getAll().values();
+        System.assertEquals(afterInfos.size(), 1);
+        WSU_Kyou_Info__c afterInfo = afterInfos.get(0);
+        System.assertEquals(afterInfo.Highest_Priority__c, null);
+        System.assertEquals(afterInfo.Lowest_Priority__c, null);
+        System.assert(!afterInfo.Locked__c);
+
+        System.assertEquals([select count() from WSU_Kyou_Open_Slots__c], 0);
+    }
+
 }

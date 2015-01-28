@@ -6,8 +6,58 @@ public class WSU_Kyou_Add implements Queueable {
     @TestVisible
     private List<WSU_Kyou_Open_Slots__c> openSlotsRecords = null;
 
+    private Boolean moving = false;
+    private Boolean deleting = false;
+    private Map<ID, WSU_Kyou_QueueEntry__c> entryObjs = null;
+    private Map<Integer, ID> entryOldPriorityToId = null;
+
+    // For adding
     public WSU_Kyou_Add(List<Map<String, Object>> entries) {
         this.entries.addAll(entries);
+    }
+
+    public WSU_Kyou_Add(Map<Integer, WSU_Kyou_QueueEntry__c> entryObjs) {
+        this(entryObjs, false);
+    }
+
+    // For moving and deleting
+    // I know this is not ideal for deleting - there should be another constructor that takes a
+    // List<WSU_Kyou_QueueEntry__c> alone for deleting. i.e., the Map provides no information.
+    public WSU_Kyou_Add(Map<Integer, WSU_Kyou_QueueEntry__c> entryObjs, Boolean deleting) {
+        /* I can't seem to support multiple moves in one call.  The Update() call complains about duplicate values even if
+           all of the current rows are getting updated at the same time and there are no duplicates.  Platform bug? */
+        // So for now, only allow one incoming.
+        if (!deleting && entryObjs.size() != 1) {
+            throw new Kyou_AddException('Only one move per call for now.  Sorry.');
+        }
+
+        // The incoming key is the old priority - we need it here so we can clear up open slots and fix kyouInfo
+        this.entryObjs = new Map<ID, WSU_Kyou_QueueEntry__c>();
+        entryOldPriorityToId = new Map<Integer, ID>();
+
+        // Make sure there is a deterministic ordering to this
+        List<Integer> keyList = new List<Integer>(entryObjs.keySet());
+        keyList.sort();
+        for (Integer oldPriority : keyList) {
+            WSU_Kyou_QueueEntry__c entryObj = entryObjs.get(oldPriority);
+
+            this.entryObjs.put(entryObj.Id, entryObj);
+
+            // Note that the values here aren't used anywhere at the moment
+            entryOldPriorityToId.put(oldPriority, entryObj.Id);
+
+            Map<String, Object> entry = new Map<String, Object>{
+                'priority' => entryObj.Priority__c.intValue(),
+                'Id' => (Object)entryObj.Id
+            };
+            entry.putAll((Map<String, Object>)JSON.deserializeUntyped(entryObj.Data__c));
+            entries.add(entry);
+        }
+
+        this.deleting = deleting;
+        if (!deleting) {
+            moving = true;
+        }
     }
 
     private void saveAdd() {
@@ -66,19 +116,23 @@ public class WSU_Kyou_Add implements Queueable {
             kyouInfo.Locked__c = true;
             saveRes = Database.Update(kyouInfo);
             if (originalLocked) {
-                if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) { // We have room
-                    if (!Test.isRunningTest()) { // Can't chain in Test context
-                        try {
-                            System.enqueueJob(this);
-                        } catch (System.AsyncException e) {
-                            // Protect from the only 2 deep allowed chain stack for queueables
-                            saveAdd();
+                if (moving) {
+                    throw new Kyou_AddException('Cannot move while locked');
+                } else {
+                    if (Limits.getQueueableJobs() < Limits.getLimitQueueableJobs()) { // We have room
+                        if (!Test.isRunningTest()) { // Can't chain in Test context
+                            try {
+                                System.enqueueJob(this);
+                            } catch (System.AsyncException e) {
+                                // Protect from the only 2 deep allowed chain stack for queueables
+                                saveAdd();
+                            }
                         }
+                    } else { // We don't have room
+                        saveAdd();
                     }
-                } else { // We don't have room
-                    saveAdd();
+                    return;
                 }
-                return;
             }
         } else { // empty Kyou, and we assume unlocked
             // Lock right away to reduce races
@@ -96,49 +150,147 @@ public class WSU_Kyou_Add implements Queueable {
         openSlots = (Set<Integer>)openSlotsResult.get(0);
         openSlotsRecords = (List<WSU_Kyou_Open_Slots__c>)openSlotsResult.get(1);
 
-        Map<Integer, Integer> moves = determineMoves(kyouInfo);
+        // If moving, we have to open up open slots and update local copy of kyouinfo.  This will let
+        // the majority of the code (determineMoves() primarily) behave as though they are new adds.
+        // Only the DML below will be different if moving.
+        if (deleting || moving) {
+            if (
+                kyouInfo.Lowest_Priority__c == null ||
+                kyouInfo.Highest_Priority__c == null ||
+                kyouInfo.Highest_Priority__c.intValue() == kyouInfo.Lowest_Priority__c.intValue() // Only one entry
+            ) {
+                return; // Nothing to do
+            }
+
+            for (Integer oldPriority : entryOldPriorityToId.keySet()) {
+                System.debug(LoggingLevel.ERROR, 'OP ' + oldPriority);
+                System.debug(LoggingLevel.ERROR, 'OP1 ' + entryOldPriorityToId.get(oldPriority));
+                System.debug(LoggingLevel.ERROR, 'OP2 ' + entryObjs.get(entryOldPriorityToId.get(oldPriority)));
+                System.debug(LoggingLevel.ERROR, 'OP3 ' + kyouInfo);
+                if (kyouInfo.Lowest_Priority__c.intValue() == oldPriority) {
+                    if (kyouInfo.Highest_Priority__c.intValue() == oldPriority) { // Then this entry is the only one
+                                                                                  // left
+                        // openSlots will already be empty
+                        kyouInfo.Lowest_Priority__c = kyouInfo.Highest_Priority__c = null;
+                    } else {
+                        // Scan upward in priority for a non open slot, removing any open slots passed on the way
+                        do {
+                            oldPriority--;
+                            if (openSlots.contains(oldPriority)) {
+                                openSlots.remove(oldPriority);
+                            } else {
+                                kyouInfo.Lowest_Priority__c = oldPriority;
+                                break;
+                            }
+                        } while (oldPriority > kyouInfo.Highest_Priority__c.intValue());
+                    }
+                } else if (kyouInfo.Highest_Priority__c.intValue() == oldPriority) {
+                    // Scan downward in priority for a non open slot, removing any open slots passed on the way
+                    do {
+                        oldPriority++;
+                        if (openSlots.contains(oldPriority)) {
+                            openSlots.remove(oldPriority);
+                        } else {
+                            kyouInfo.Highest_Priority__c = oldPriority;
+                            break;
+                        }
+                    } while (oldPriority < kyouInfo.Lowest_Priority__c.intValue());
+                } else if (!openSlots.contains(oldPriority)) {
+                    openSlots.add(oldPriority);
+                } else {
+                    throw new Kyou_AddException('We have a problem: bad oldPriority ' + oldPriority + ' with Kyou info ' + kyouInfo);
+                }
+            }
+        }
+        System.debug(LoggingLevel.ERROR, 'OP4 ' + kyouInfo);
+
+        Map<Integer, Integer> moves = new Map<Integer, Integer>();
+        if (!deleting) {
+            moves = determineMoves(kyouInfo);
+        }
 
         // I will have to query for any WSU_Kyou_QueueEntry__c that might need to get moved.
         // This will only happen if an incoming priority wants a priority that's already taken.
         List<WSU_Kyou_QueueEntry__c> existingEntriesToMove = [
-            select Priority__c from WSU_Kyou_QueueEntry__c where Priority__c in :moves.keySet()
+            select Id, Priority__c, Data__c from WSU_Kyou_QueueEntry__c where Priority__c in :moves.keySet()
         ];
 
         for (WSU_Kyou_QueueEntry__c entry : existingEntriesToMove) {
             entry.Priority__c = moves.get(entry.Priority__c.intValue());
         }
 
-        List<Database.SaveResult> updateResults = Database.Update(existingEntriesToMove);
+        // So for some reason if I put existing entries and new entries together for a single Upsert(), I can't have the
+        // existing ones update Priority and the new ones grab a Priority that an old one is leaving behind - this
+        // causes a DUPLICATE_VALUE exception.  So I have to do separate DML lines for the two modes.
 
-        // Insert new ones
-        List<WSU_Kyou_QueueEntry__c> toInsert = new List<WSU_Kyou_QueueEntry__c>();
-        for (Map<String, Object> newEntry : entries) {
-            Integer priority = (Integer)newEntry.remove('priority');
-            toInsert.add(new WSU_Kyou_QueueEntry__c(
-                Data__c = JSON.serialize(newEntry),
-                Priority__c = priority
-            ));
+        //List<WSU_Kyou_QueueEntry__c> toUpsert = new List<WSU_Kyou_QueueEntry__c>();
+        List<Database.SaveResult> updateResults = null;
+        List<Database.UpsertResult> upsertResults = null;
+        List<Database.DeleteResult> deleteResults = null;
+
+        if (deleting) {
+            deleteResults = Database.Delete(entryObjs.values());
+        } else {
+            if (moving) {
+                List<WSU_Kyou_QueueEntry__c> toUpdate = new List<WSU_Kyou_QueueEntry__c>();
+
+                toUpdate.addAll(existingEntriesToMove);
+
+                for (Map<String, Object> entry : entries) {
+                    WSU_Kyou_QueueEntry__c entryObj = entryObjs.get((ID)entry.get('Id'));
+                    entryObj.Priority__c = (Integer)entry.remove('priority');
+                    toUpdate.add(entryObj);
+                }
+
+                if (toUpdate.size() > (Limits.getLimitDMLRows() - Limits.getDMLRows())) {
+                    throw new Kyou_AddException(
+                        'Too many entries to add or move: ' + toUpdate.size() + ' where the limit allows ' + (Limits.getLimitDMLRows() - Limits.getDMLRows())
+                    );
+                }
+
+                /* I can't seem to support multiple moves in one call.  The Update() call complains about duplicate values even if
+                   all of the current rows are getting updated at the same time and there are no duplicates.  Platform bug? */
+                updateResults = Database.Update(toUpdate);
+            } else {
+                List<WSU_Kyou_QueueEntry__c> toUpsert = new List<WSU_Kyou_QueueEntry__c>();
+
+                updateResults = Database.Update(existingEntriesToMove);
+
+                // Upsert new ones
+                for (Map<String, Object> newEntry : entries) {
+                    Integer priority = (Integer)newEntry.remove('priority');
+                    toUpsert.add(new WSU_Kyou_QueueEntry__c(
+                        Data__c = JSON.serialize(newEntry),
+                        Priority__c = priority
+                    ));
+                }
+
+                // For now - there will be code eventually that means this shouldn't happen (see TODO below)
+                if (toUpsert.size() > (Limits.getLimitDMLRows() - Limits.getDMLRows())) {
+                    throw new Kyou_AddException(
+                        'Too many entries to add or move: ' + toUpsert.size() + ' where the limit allows ' + (Limits.getLimitDMLRows() - Limits.getDMLRows())
+                    );
+                }
+
+                upsertResults = Database.Upsert(toUpsert);
+            }
         }
-        List<Database.SaveResult> insertResults = Database.Insert(toInsert);
 
         // TODO: Recall that the plan here is to determine exactly what number of incoming entires I can permit while never
         // hitting the 10k DML row limit.
         // Then for null priorities, accept as many as possible (10k - the number of bookkeeping DML rows done; 2 so far
         // for lock/unlock)
 
-        // Update Info record (this will take a DML row too)
-        Database.UpsertResult upsertRes = Database.Upsert(kyouInfo);
-
-        // Unlock
+        // Update Info record and unlock (this will take a DML row too)
         kyouInfo.Locked__c = false;
-        saveRes = Database.Update(kyouInfo);
+        upsertResults = Database.Upsert(new List<WSU_Kyou_Info__c>{kyouInfo});
     }
 
     // Note that this has some side effects:
     //     - fixes this.entries elements if they need their priorities changed.
     //     - replaces Open Slots records if needed (doing two DMLs: delete and insert)
-    @TestVisible
-    private Map<Integer, Integer> determineMoves(WSU_Kyou_Info__c kyouInfo) {
+    // Also note that this is used by moving code in the VF controller
+    public Map<Integer, Integer> determineMoves(WSU_Kyou_Info__c kyouInfo) {
         Map<Integer, Integer> movePriorities = new Map<Integer, Integer>();
 
         Set<Integer> originalOpenSlots = openSlots.clone();
@@ -258,4 +410,13 @@ public class WSU_Kyou_Add implements Queueable {
         return movePriorities;
     }
 
+    // For use by moving code in VF controller
+    public Map<Integer, Integer> determineMoves(WSU_Kyou_Info__c kyouInfo, List<Object> openSlotsResult) {
+        openSlots = (Set<Integer>)openSlotsResult.get(0);
+        openSlotsRecords = (List<WSU_Kyou_Open_Slots__c>)openSlotsResult.get(1);
+
+        return determineMoves(kyouInfo);
+    }
+
+    public class Kyou_AddException extends Exception {}
 }

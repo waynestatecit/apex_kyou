@@ -14,6 +14,8 @@
 //
 
 public class WSU_Kyou implements Database.Batchable<Object> {
+    // FIXME: a safe way to delete rows?  using adder?
+
     public static Database.Batchable<sObject> latestImplementation = null;
     public static Database.Batchable<Object> latestImplementationObject = null;
 

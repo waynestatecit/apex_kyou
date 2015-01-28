@@ -1,0 +1,11 @@
+.locked {
+	font-weight: bold;
+}
+
+.spinner {
+    display: inline-block;
+    position: relative !important;
+    margin-right: 3px;
+    margin-left: 8px;
+    margin-bottom: 4px;
+}

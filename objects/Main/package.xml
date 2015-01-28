@@ -6,6 +6,7 @@
         <members>WSU_Kyou_Info__c</members>
         <members>WSU_Kyou_Open_Slots__c</members>
         <members>WSU_Kyou_Saved_Add__c</members>
+        <members>WSU_Kyou_Saved_Move__c</members>
         <name>CustomObject</name>
     </types>
     <version>31.0</version>

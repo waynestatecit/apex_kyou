@@ -15,6 +15,7 @@
         <members>WSU_Kyou_Add</members>
         <members>WSU_Kyou_AddTest</members>
         <members>WSU_KyouSavedAddsTest</members>
+        <members>WSU_Kyou_Controller</members>
         <name>ApexClass</name>
     </types>
     <types>
@@ -23,7 +24,21 @@
         <members>WSU_Kyou_Info__c</members>
         <members>WSU_Kyou_Open_Slots__c</members>
         <members>WSU_Kyou_Saved_Add__c</members>
+        <members>WSU_Kyou_Saved_Move__c</members>
         <name>CustomObject</name>
     </types>
-    <version>31.0</version>
+    <types>
+        <members>Kyou</members>
+        <name>ApexPage</name>
+    </types>
+    <types>
+        <members>kyoulibsZip</members>
+        <members>kyoucssZip</members>
+        <name>StaticResource</name>
+    </types>
+    <types>
+        <members>Kyou</members>
+        <name>CustomTab</name>
+    </types>
+    <version>32.0</version>
 </Package>
