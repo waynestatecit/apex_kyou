@@ -144,17 +144,29 @@ public class WSU_Kyou_Add implements Queueable {
         Set<Integer> originalOpenSlots = openSlots.clone();
         Map<Integer, Map<String, Object>> currentPriorityToNewEntry = new Map<Integer, Map<String, Object>>();
 
+        // It seems stupid that there isn't a native Apex way to get the max of a Set/List of Integers,
+        // but there isn't.  Instead of writing a util, I'm just going to track it as I go.
+        Integer maxNewEntryCurrentPriority = null;
+
         Integer replacementLowestPriority = null;
         for (Map<String, Object> entry : entries) {
             Integer priority = null;
             if (!entry.containsKey('priority') || entry.get('priority') == null) { // Put at the end
-                priority = kyouInfo.Lowest_Priority__c == null ? 0 : kyouInfo.Lowest_Priority__c.intValue() + 1;
+                if (maxNewEntryCurrentPriority == null) {
+                    System.assert(currentPriorityToNewEntry.size() == 0);  // Sanity check for now TODO: remove
+                    priority = kyouInfo.Lowest_Priority__c == null ? 0 : kyouInfo.Lowest_Priority__c.intValue() + 1;
+                } else {
+                    System.assert(currentPriorityToNewEntry.size() > 0);  // Sanity check for now TODO: remove
+                    if (kyouInfo.Lowest_Priority__c == null) {
+                        priority = maxNewEntryCurrentPriority + 1;
+                    } else {
+                        priority = Math.max(maxNewEntryCurrentPriority, kyouInfo.Lowest_Priority__c.intValue()) + 1;
+                    }
+                }
                 entry.put('priority', priority);
             } else {
                 priority = (Integer)entry.get('priority');
             }
-
-            List<Integer> previousEntriesToMove = new List<Integer>();
 
             if (kyouInfo.Highest_Priority__c != null) { // For non empty queue
                 Integer highestPriority = kyouInfo.Highest_Priority__c.intValue();
@@ -171,10 +183,6 @@ public class WSU_Kyou_Add implements Queueable {
                             break;
                         } else {
                             if (!originalOpenSlots.contains(prioritySearch)) {
-                                if (currentPriorityToNewEntry.containsKey(prioritySearch)) {
-                                    previousEntriesToMove.add(prioritySearch);
-                                }
-
                                 Integer targetPriority = null;
                                 if (movePriorities.containsKey(prioritySearch)) {
                                     targetPriority = movePriorities.get(prioritySearch) + 1;
@@ -218,26 +226,54 @@ public class WSU_Kyou_Add implements Queueable {
                     }
                     kyouInfo.Lowest_Priority__c = lowestPriority = priority;
                 }
-
-            } else { // For empty queue
-                if (currentPriorityToNewEntry.containsKey(priority)) {
-                    previousEntriesToMove.add(priority);
-                }
             }
 
             // Increment priorities for previous new entries that need moving
-            // Do this in reverse order so nothing gets clobbered
-            for (Integer i = previousEntriesToMove.size() - 1; i >= 0; i--) {
-                Integer currentPriority = previousEntriesToMove.get(i);
-                Map<String, Object> entryToIncrement = currentPriorityToNewEntry.remove(currentPriority);
-                Integer newPriority = (Integer)entryToIncrement.get('priority') + 1;
-                entryToIncrement.put('priority', newPriority);
-                currentPriorityToNewEntry.put(newPriority, entryToIncrement);
+            if (currentPriorityToNewEntry.containsKey(priority)) {
+                Integer previousEntryPriorityToMove = priority;
+
+                List<Integer> currentPriorities = new List<Integer>(currentPriorityToNewEntry.keySet());
+                currentPriorities.sort();
+                // Find index for previousEntryPriorityToMove
+                Integer previousEntryPriorityToMoveIndex = null;
+                for (Integer i = 0; i < currentPriorities.size(); i++) {
+                    if (currentPriorities.get(i) == previousEntryPriorityToMove) {
+                        previousEntryPriorityToMoveIndex = i;
+                        break;
+                    }
+                }
+                List<Integer> prioritiesToMove = new List<Integer>{previousEntryPriorityToMove};
+                for (Integer i = previousEntryPriorityToMoveIndex; i < currentPriorities.size() - 1; i++) {  // We don't inspect the last one
+                    // The index represented by i is already in prioritiesToMove.  What we need
+                    // to determine is whether the next one in priority must move.
+                    if (currentPriorities.get(i + 1) == currentPriorities.get(i) + 1) {
+                        prioritiesToMove.add(currentPriorities.get(i + 1));
+                    } else {
+                        // If we find a gap, we can stop.
+                        break;
+                    }
+                }
+
+                // Do this in reverse order so nothing gets clobbered
+                for (Integer i = prioritiesToMove.size() - 1; i >= 0; i--) {
+                    Integer priorityToMove = prioritiesToMove.get(i);
+
+                    Map<String, Object> entryToIncrement = currentPriorityToNewEntry.remove(priorityToMove);
+
+                    Integer newPriority = (Integer)entryToIncrement.get('priority') + 1;
+                    entryToIncrement.put('priority', newPriority);
+                    currentPriorityToNewEntry.put(newPriority, entryToIncrement);
+                    if (maxNewEntryCurrentPriority == null || newPriority > maxNewEntryCurrentPriority) {
+                        maxNewEntryCurrentPriority = newPriority;
+                    }
+                }
             }
 
             // We don't need to change the current entry's priority here, but remember it for later iterations
             currentPriorityToNewEntry.put(priority, entry);
-
+            if (maxNewEntryCurrentPriority == null || priority > maxNewEntryCurrentPriority) {
+                maxNewEntryCurrentPriority = priority;
+            }
         }
 
         if (replacementLowestPriority != null) {
@@ -248,7 +284,9 @@ public class WSU_Kyou_Add implements Queueable {
             kyouInfo.Highest_Priority__c = newPriorities.get(0);
             kyouInfo.Lowest_Priority__c = newPriorities.get(newPriorities.size() - 1);
             for (Integer i = kyouInfo.Highest_Priority__c.intValue() + 1; i < kyouInfo.Lowest_Priority__c.intValue(); i++) {
-                openSlots.add(i);
+                if (!currentPriorityToNewEntry.containsKey(i)) {
+                    openSlots.add(i);
+                }
             }
         }
 
@@ -257,5 +295,4 @@ public class WSU_Kyou_Add implements Queueable {
 
         return movePriorities;
     }
-
 }
