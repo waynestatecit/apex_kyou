@@ -1,6 +1,7 @@
 // This file is part of WSU_Kyou, a Salesforce native queue for Batch Apex and Scheduled Apex.
 
-// Copyright 2014-2015, Wayne State University
+// Copyright 2014, Wayne State University
+// Copyright 2015, Adam J. Lincoln
 // License: 3-clause BSD license.  See LICENSE.
 
 @isTest
