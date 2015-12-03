@@ -22,7 +22,10 @@ public class WSU_Kyou implements Database.Batchable<Object> {
     @TestVisible
     private static List<Map<String, Object>> entriesReadyToCommit = new List<Map<String, Object>>();
 
+    // This makes Kyou schedule the next run immediately after trying to submit a job to the batch queue
     private static Boolean perpetuateInRun = false;
+
+    // This makes Kyou run essentially serially - when a job is done, it schedules the next run
     private static Boolean perpetuateInFinish = false;
     private static Boolean drasticMeasures = false;
     private static Boolean forceDrasticMeasures = false;
