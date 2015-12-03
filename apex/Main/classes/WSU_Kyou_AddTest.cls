@@ -1,6 +1,7 @@
 // This file is part of WSU_Kyou, a Salesforce native queue for Batch Apex and Scheduled Apex.
 
 // Copyright 2014, Wayne State University
+// Copyright 2015, Adam J. Lincoln
 // License: 3-clause BSD license.  See LICENSE.
 
 @isTest
@@ -770,6 +771,405 @@ public class WSU_Kyou_AddTest {
             }
         }
         System.assert(expectedOpenSlots.equals(setFromRecords));
+    }
+
+    static testMethod void testDetermineMovesNewQueueMultipleNullPriorityAdds() {
+        List<Map<String, Object>> toAdd = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'class' => 'somefakeclass1',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass2',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass3',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass4',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass5',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass6',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            }
+        };
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(toAdd);
+
+        // New queue
+        WSU_Kyou_Info__c kyouInfo = new WSU_Kyou_Info__c(
+            Locked__c = false,
+            Highest_Priority__c = null,
+            Lowest_Priority__c = null
+        );
+
+        List<Object> openSlotsResults = WSU_Kyou.getOpenSlots();
+        adder.openSlots = (Set<Integer>)(openSlotsResults.get(0));
+        adder.openSlotsRecords = (List<WSU_Kyou_Open_Slots__c>)(openSlotsResults.get(1));
+        Map<Integer, Integer> moves = adder.determineMoves(kyouInfo);
+
+        Map<Integer, Integer> expectedMoves = new Map<Integer, Integer>();
+
+        List<Map<String, Object>> expectedToAdd = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'class' => 'somefakeclass1',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass2',
+                'args' => null,
+                'size' => null,
+                'priority' => 1,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass3',
+                'args' => null,
+                'size' => null,
+                'priority' => 2,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass4',
+                'args' => null,
+                'size' => null,
+                'priority' => 3,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass5',
+                'args' => null,
+                'size' => null,
+                'priority' => 4,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass6',
+                'args' => null,
+                'size' => null,
+                'priority' => 5,
+                'list' => false,
+                'object_list' => false
+            }
+        };
+        System.assert(moves.equals(expectedMoves));
+        System.assert(toAdd.equals(expectedToAdd));
+        System.assertEquals(kyouInfo.Highest_Priority__c.intValue(), 0);
+        System.assertEquals(kyouInfo.Lowest_Priority__c.intValue(), 5);
+        Set<Integer> expectedOpenSlots = new Set<Integer>();
+        System.assert(adder.openSlots.equals(expectedOpenSlots));
+
+        List<WSU_Kyou_Open_Slots__c> expectedOpenSlotsRecords = new List<WSU_Kyou_Open_Slots__c>();
+
+        openSlotsResults = WSU_Kyou.getOpenSlots();
+        System.assert(expectedOpenSlotsRecords.equals((List<WSU_Kyou_Open_Slots__c>)(openSlotsResults.get(1))));
+    }
+
+    static testMethod void testDetermineMovesExistingQueueMultipleNullPriorityAdds() {
+        List<Map<String, Object>> toAdd = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'class' => 'somefakeclass1',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass2',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass3',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass4',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass5',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass6',
+                'args' => null,
+                'size' => null,
+                'priority' => null,
+                'list' => false,
+                'object_list' => false
+            }
+        };
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(toAdd);
+
+        // Existing queue
+        Database.SaveResult result = Database.Insert(new WSU_Kyou_Open_Slots__c(
+            Data__c = '[11]'
+        ));
+
+        WSU_Kyou_Info__c kyouInfo = new WSU_Kyou_Info__c(
+            Locked__c = false,
+            Highest_Priority__c = 10,
+            Lowest_Priority__c = 12
+        );
+
+        List<Object> openSlotsResults = WSU_Kyou.getOpenSlots();
+        adder.openSlots = (Set<Integer>)(openSlotsResults.get(0));
+        adder.openSlotsRecords = (List<WSU_Kyou_Open_Slots__c>)(openSlotsResults.get(1));
+        Map<Integer, Integer> moves = adder.determineMoves(kyouInfo);
+
+        Map<Integer, Integer> expectedMoves = new Map<Integer, Integer>();
+
+        List<Map<String, Object>> expectedToAdd = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'class' => 'somefakeclass1',
+                'args' => null,
+                'size' => null,
+                'priority' => 13,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass2',
+                'args' => null,
+                'size' => null,
+                'priority' => 14,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass3',
+                'args' => null,
+                'size' => null,
+                'priority' => 15,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass4',
+                'args' => null,
+                'size' => null,
+                'priority' => 16,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass5',
+                'args' => null,
+                'size' => null,
+                'priority' => 17,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass6',
+                'args' => null,
+                'size' => null,
+                'priority' => 18,
+                'list' => false,
+                'object_list' => false
+            }
+        };
+        System.assert(moves.equals(expectedMoves));
+        System.assert(toAdd.equals(expectedToAdd));
+        System.assertEquals(kyouInfo.Highest_Priority__c.intValue(), 10);
+        System.assertEquals(kyouInfo.Lowest_Priority__c.intValue(), 18);
+
+        Set<Integer> expectedOpenSlots = new Set<Integer>{11};
+        System.assert(adder.openSlots.equals(expectedOpenSlots));
+
+        openSlotsResults = WSU_Kyou.getOpenSlots();
+        Set<Integer> setFromRecords = new Set<Integer>();
+        for (WSU_Kyou_Open_Slots__c openSlotsRecord : (List<WSU_Kyou_Open_Slots__c>)(openSlotsResults.get(1))) {
+            for (Object openSlotObj : (List<Object>)JSON.deserializeUntyped(openSlotsRecord.Data__c)) {
+                setFromRecords.add((Integer)openSlotObj);
+            }
+        }
+        System.assert(expectedOpenSlots.equals(setFromRecords));
+    }
+
+    static testMethod void testDetermineMovesNewQueueMultipleZeroPriorityAdds() {
+        List<Map<String, Object>> toAdd = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'class' => 'somefakeclass1',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass2',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass3',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass4',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass5',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass6',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            }
+        };
+        WSU_Kyou_Add adder = new WSU_Kyou_Add(toAdd);
+
+        // New queue
+        WSU_Kyou_Info__c kyouInfo = new WSU_Kyou_Info__c(
+            Locked__c = false,
+            Highest_Priority__c = null,
+            Lowest_Priority__c = null
+        );
+
+        List<Object> openSlotsResults = WSU_Kyou.getOpenSlots();
+        adder.openSlots = (Set<Integer>)(openSlotsResults.get(0));
+        adder.openSlotsRecords = (List<WSU_Kyou_Open_Slots__c>)(openSlotsResults.get(1));
+        Map<Integer, Integer> moves = adder.determineMoves(kyouInfo);
+
+        Map<Integer, Integer> expectedMoves = new Map<Integer, Integer>();
+
+        List<Map<String, Object>> expectedToAdd = new List<Map<String, Object>>{
+            new Map<String, Object>{
+                'class' => 'somefakeclass1',
+                'args' => null,
+                'size' => null,
+                'priority' => 5,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass2',
+                'args' => null,
+                'size' => null,
+                'priority' => 4,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass3',
+                'args' => null,
+                'size' => null,
+                'priority' => 3,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass4',
+                'args' => null,
+                'size' => null,
+                'priority' => 2,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass5',
+                'args' => null,
+                'size' => null,
+                'priority' => 1,
+                'list' => false,
+                'object_list' => false
+            },
+            new Map<String, Object>{
+                'class' => 'somefakeclass6',
+                'args' => null,
+                'size' => null,
+                'priority' => 0,
+                'list' => false,
+                'object_list' => false
+            }
+        };
+        System.assert(moves.equals(expectedMoves));
+        System.assert(toAdd.equals(expectedToAdd));
+        System.assertEquals(kyouInfo.Highest_Priority__c.intValue(), 0);
+        System.assertEquals(kyouInfo.Lowest_Priority__c.intValue(), 5);
+        Set<Integer> expectedOpenSlots = new Set<Integer>();
+        System.assert(adder.openSlots.equals(expectedOpenSlots));
+
+        List<WSU_Kyou_Open_Slots__c> expectedOpenSlotsRecords = new List<WSU_Kyou_Open_Slots__c>();
+
+        openSlotsResults = WSU_Kyou.getOpenSlots();
+        System.assert(expectedOpenSlotsRecords.equals((List<WSU_Kyou_Open_Slots__c>)(openSlotsResults.get(1))));
     }
 
     // TODO: test determineMoves() for new *high* priority entries
